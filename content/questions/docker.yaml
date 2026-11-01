@@ -1,0 +1,470 @@
+topic: docker
+questions:
+  # ---------- Fundamentals ----------
+  - id: docker-fund-001
+    type: open
+    subtopic: fundamentals
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between a container and a virtual machine?
+    rubric:
+      keyPoints:
+        - { text: "VMs virtualize hardware: each VM runs a full guest OS on a hypervisor", weight: 3 }
+        - { text: "Containers share the host's kernel and isolate processes (namespaces + cgroups)", weight: 3 }
+        - { text: "Containers are lighter: start in seconds/ms, smaller, higher density", weight: 2 }
+        - { text: "VMs give stronger isolation (separate kernel); containers have a larger shared-kernel attack surface; can't run a different kernel/OS type natively", weight: 2 }
+    modelAnswer: |
+      A VM virtualizes hardware. A hypervisor runs several full guest operating systems, each with its own kernel, so it's heavy (gigabytes, minutes to boot) but strongly isolated. A container is just a group of processes on the host, sharing the host's kernel. Linux namespaces give it its own view of processes, network, mounts and hostname, and cgroups limit its CPU and memory. So containers are megabytes, start in about a second, and you can pack many more per host. The trade-off: isolation is weaker because everything shares one kernel, and you can't run a Windows container on a Linux kernel. In the cloud you often run containers inside VMs.
+    explanation: "On a Mac, Docker Desktop runs a small Linux VM, because containers need a Linux kernel."
+    followUps: ["Which Linux kernel features make containers possible?"]
+
+  - id: docker-fund-002
+    type: open
+    subtopic: fundamentals
+    level: 2
+    prompt: Which Linux kernel features make containers work? Explain namespaces and cgroups.
+    rubric:
+      keyPoints:
+        - { text: "Namespaces isolate what a process can SEE", weight: 3 }
+        - { text: "Examples: PID, network, mount, UTS (hostname), IPC, user namespaces", weight: 2 }
+        - { text: "cgroups limit/account what a process can USE: CPU, memory, I/O, PIDs", weight: 3 }
+        - { text: "Plus a layered filesystem (overlayfs) and security features like capabilities/seccomp", weight: 1 }
+    modelAnswer: |
+      Two main features. Namespaces control what a process can see. A PID namespace gives the container its own process tree where the app is PID 1; a network namespace gives it its own interfaces and ports; and there are mount, UTS (hostname), IPC and user namespaces. cgroups (control groups) control what it can use: CPU shares and quotas, memory limits (exceed them and you get OOM-killed), I/O and the PID count. On top of that, the image is mounted with a layered filesystem like overlayfs, and capabilities and seccomp reduce what root inside the container can do.
+    explanation: "`docker run --memory=256m --cpus=0.5` sets cgroup limits. Kubernetes requests and limits map to the same cgroups."
+
+  - id: docker-fund-003
+    type: mcq
+    subtopic: fundamentals
+    level: 1
+    prompt: What's the difference between an image and a container?
+    options:
+      - "An image is a read-only template (layers + metadata); a container is a running (or stopped) instance of it with a writable layer on top"
+      - "They're the same thing"
+      - "A container is the file you push to a registry; an image is what runs"
+      - "Images can only run on the machine where they were built"
+    correct: [0]
+    explanation: "Like a class and an object. Many containers can run from one image. Changes inside a container go to its thin writable layer and are lost when it's removed, unless they're in a volume."
+
+  # ---------- Images & layers ----------
+  - id: docker-img-001
+    type: open
+    subtopic: images
+    level: 2
+    tags: [il-common]
+    prompt: How does Docker's build cache work, and how should you order a Dockerfile to make builds fast?
+    rubric:
+      keyPoints:
+        - { text: "Each instruction creates a layer; Docker reuses cached layers if the instruction and its inputs haven't changed", weight: 3 }
+        - { text: "Once one layer changes, all following layers are rebuilt", weight: 3 }
+        - { text: "Put rarely-changing steps first: copy dependency manifests (package.json/requirements.txt) and install deps BEFORE copying the source code", weight: 3 }
+        - { text: "Use .dockerignore to avoid sending/invalidating with unneeded files", weight: 1 }
+    modelAnswer: |
+      Every Dockerfile instruction produces a layer, and Docker reuses a cached layer when the instruction and its inputs (for COPY, the file contents) are unchanged. The catch is that once a layer changes, every layer after it is rebuilt. So you order from least to most frequently changing: base image, system packages, then copy only the dependency manifest, like `package.json` and the lock file, run the install, and only then `COPY . .` the source. A code change then reuses the expensive dependency layer. A `.dockerignore` keeps `node_modules`, `.git` and secrets out of the build context, so they don't bust the cache or leak into the image.
+    explanation: "In CI, use BuildKit cache exports (`--cache-from`, or `cache-to: type=gha` in GitHub Actions) so the cache survives between runners."
+
+  - id: docker-img-002
+    type: mcq
+    subtopic: images
+    level: 2
+    prompt: How can you make a Docker image smaller? Select all that apply.
+    options:
+      - "Use a multi-stage build and copy only the build output into the final stage"
+      - "Use a slim/alpine/distroless base image"
+      - "Clean package manager caches in the same RUN layer that installs packages"
+      - "Delete files in a later RUN instruction than the one that created them"
+    correct: [0, 1, 2]
+    explanation: "Layers are additive: deleting a file in a later layer hides it but **doesn't shrink the image**. Clean up in the same `RUN`, e.g. `apt-get install … && rm -rf /var/lib/apt/lists/*`. `docker history` and `dive` show which layers are big."
+
+  - id: docker-img-003
+    type: command
+    subtopic: images
+    level: 1
+    prompt: Build an image from the Dockerfile in the current directory and tag it `myapp:1.4.0`.
+    answers: ["docker build -t myapp:1.4.0 ."]
+    patterns: ['^docker (buildx )?build (.* )?(-t|--tag)[ =]myapp:1\.4\.0( .*)? \.$']
+    samples: ["docker build --tag myapp:1.4.0 .", "docker buildx build -t myapp:1.4.0 .", "docker build -t myapp:1.4.0 -f Dockerfile ."]
+    rejects: ["docker build .", "docker run myapp:1.4.0", "docker build -t myapp ."]
+    explanation: '`-t name:tag`, and the last argument is the build context (`.`). `-f` picks another Dockerfile. Avoid relying on `latest` for anything you deploy.'
+
+  # ---------- Dockerfile ----------
+  - id: docker-df-001
+    type: open
+    subtopic: dockerfile
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between `CMD` and `ENTRYPOINT`?
+    rubric:
+      keyPoints:
+        - { text: "ENTRYPOINT defines the executable that always runs", weight: 3 }
+        - { text: "CMD provides default arguments (or a default command) that are easily overridden by `docker run image <args>`", weight: 3 }
+        - { text: "Used together: ENTRYPOINT is the program, CMD its default args", weight: 2 }
+        - { text: "Prefer exec (JSON array) form so the process is PID 1 and receives signals", weight: 2 }
+    modelAnswer: |
+      ENTRYPOINT is the executable the container always runs. CMD is the default: either the default command, or, if there's an ENTRYPOINT, the default arguments to it. Anything you put after the image name in `docker run` replaces CMD, while replacing ENTRYPOINT needs `--entrypoint`. A common pattern is `ENTRYPOINT ["python", "app.py"]` with `CMD ["--port", "8080"]`. Use the JSON exec form, not the shell form, so your process runs as PID 1 and actually gets SIGTERM on `docker stop` instead of a `/bin/sh` wrapper swallowing it.
+    explanation: In Kubernetes, `command` overrides ENTRYPOINT and `args` overrides CMD.
+
+  - id: docker-df-002
+    type: mcq
+    subtopic: dockerfile
+    level: 1
+    prompt: What's the difference between `COPY` and `ADD`?
+    options:
+      - "ADD can also fetch remote URLs and auto-extracts local tar archives; COPY just copies files. Prefer COPY unless you need those features"
+      - "COPY is deprecated"
+      - "ADD only works with directories"
+      - "There's no difference"
+    correct: [0]
+    explanation: COPY is explicit and predictable. ADD's magic, like silently extracting a tarball, surprises people.
+
+  - id: docker-df-003
+    type: open
+    subtopic: dockerfile
+    level: 2
+    tags: [il-common]
+    prompt: Name Dockerfile best practices you'd look for in a code review.
+    rubric:
+      keyPoints:
+        - { text: "Small, pinned base image (specific version/digest, not latest); slim/distroless", weight: 2 }
+        - { text: "Multi-stage builds: build tools not in the final image", weight: 2 }
+        - { text: "Layer ordering for cache; combine RUN steps and clean caches", weight: 2 }
+        - { text: "Run as a non-root USER", weight: 3 }
+        - { text: "No secrets in the image (ENV/COPY/ARG); use .dockerignore", weight: 3 }
+        - { text: "Exec-form CMD/ENTRYPOINT, HEALTHCHECK, one main process per container", weight: 1 }
+    modelAnswer: |
+      I'd look for: a small base image pinned to a specific version, not `latest`. A multi-stage build, so compilers and dev dependencies don't ship. Dependency install before copying source, for the cache, and `RUN` steps combined with package caches cleaned in the same layer. A `.dockerignore`. A non-root `USER`. Absolutely no secrets baked in through `ENV`, `ARG` or copied files, because anyone who pulls the image can read them from the layers. Exec-form `CMD`, one main process per container, and a `HEALTHCHECK` or probes in Kubernetes. I'd also run a scanner like Trivy in CI.
+    explanation: "`hadolint` lints Dockerfiles automatically and catches most of these."
+
+  - id: docker-df-004
+    type: mcq
+    subtopic: dockerfile
+    level: 2
+    prompt: Why is `ARG API_KEY` followed by `RUN ./configure --key $API_KEY` a bad way to use a secret during a build?
+    options:
+      - "Build args are recorded in the image history/metadata, so anyone with the image can read the secret"
+      - "ARG values are not available to RUN instructions"
+      - "It makes the image larger"
+      - "It only works with Alpine"
+    correct: [0]
+    explanation: '`docker history` exposes ARG values. Use BuildKit secrets instead: `RUN --mount=type=secret,id=api_key …` with `docker build --secret id=api_key,src=…`. They are never written to a layer.'
+
+  - id: docker-df-005
+    type: order
+    subtopic: dockerfile
+    level: 2
+    prompt: Order these lines of a Node.js Dockerfile for the best layer caching.
+    steps:
+      - "FROM node:22-slim"
+      - "WORKDIR /app"
+      - "COPY package.json package-lock.json ./"
+      - "RUN npm ci --omit=dev"
+      - "COPY . ."
+      - 'CMD ["node", "server.js"]'
+    explanation: Dependencies change rarely, source changes often. Copying the lockfile alone first means `npm ci` is cached until dependencies actually change.
+
+  # ---------- Runtime ----------
+  - id: docker-rt-001
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: Run `nginx:1.27` in the background, named `web`, publishing container port 80 on host port 8080.
+    answers: ["docker run -d --name web -p 8080:80 nginx:1.27"]
+    patterns: ['^docker run (?=.*(-d\b|--detach|-\w*d\w*\b))(?=.*--name[ =]web)(?=.*(-p|--publish)[ =]8080:80\b).* nginx:1\.27$']
+    samples: ["docker run --name web -d -p 8080:80 nginx:1.27", "docker run -p 8080:80 --name=web -d nginx:1.27", "docker run --detach --publish 8080:80 --name web nginx:1.27"]
+    rejects: ["docker run -d --name web -p 80:8080 nginx:1.27", "docker run nginx:1.27"]
+    explanation: "`-p HOST:CONTAINER`. Getting the order backwards is the classic mistake. `-d` is detached, `--name` sets a stable name instead of a random one."
+
+  - id: docker-rt-002
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: Open an interactive shell inside the running container `web`.
+    answers: ["docker exec -it web sh", "docker exec -it web bash", "docker exec -it web /bin/sh", "docker exec -it web /bin/bash"]
+    samples: ["docker exec -ti web sh", "docker exec -i -t web bash"]
+    rejects: ["docker run -it web sh", "docker attach web"]
+    explanation: '`exec` runs a new process in an existing container; `-it` gives an interactive TTY. Slim and distroless images may have no shell. Use `docker debug` or an ephemeral debug container (`kubectl debug` in k8s).'
+
+  - id: docker-rt-003
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: Follow the logs of container `web`, starting from the last 50 lines.
+    answers: ["docker logs -f --tail 50 web", "docker logs --tail 50 -f web"]
+    patterns: ['^docker logs (?=.*(-f|--follow))(?=.*(--tail[ =]50|-n ?50)).*web$']
+    samples: ["docker logs -f --tail=50 web", "docker logs --follow -n 50 web"]
+    rejects: ["docker logs web", "docker attach web"]
+    explanation: Docker captures the container's stdout and stderr. That's why apps in containers should log to stdout, not to files.
+
+  - id: docker-rt-004
+    type: open
+    subtopic: runtime
+    level: 2
+    tags: [il-common]
+    prompt: A container exits immediately after `docker run`. How do you find out why?
+    rubric:
+      keyPoints:
+        - { text: "docker ps -a to see it and its exit code", weight: 2 }
+        - { text: "docker logs <container> to read the output/error", weight: 3 }
+        - { text: "Interpret exit codes: 0 = main process finished (e.g. no foreground process), 1 = app error, 137 = SIGKILL/OOM, 127 = command not found", weight: 2 }
+        - { text: "docker inspect (State, OOMKilled, Cmd/Entrypoint, env)", weight: 2 }
+        - { text: "Run interactively overriding the entrypoint (docker run -it --entrypoint sh image) to debug", weight: 1 }
+    modelAnswer: |
+      A container lives only as long as its main process. So first `docker ps -a` to find it and its exit code, then `docker logs <id>`, which usually shows the error. The exit code helps: 0 means the main process simply finished, often because the command isn't a long-running foreground process (like a service started in the background). 1 is an application error, like missing config or a bad env var. 127 is command not found. 137 means it was SIGKILLed, often by the OOM killer. `docker inspect` shows `State.OOMKilled`, the actual command and the env. To poke around, I'd run it with `--entrypoint sh -it` and start the app by hand.
+    explanation: "Exit code 128+N means the process was killed by signal N: 137 = 128+9 (SIGKILL), 143 = 128+15 (SIGTERM)."
+
+  - id: docker-rt-005
+    type: mcq
+    subtopic: runtime
+    level: 2
+    prompt: A container's status shows `Exited (137)`. What's the most likely cause?
+    options: ["It was killed with SIGKILL, often by the OOM killer for exceeding its memory limit", "The application returned a normal error", "The image doesn't exist", "Port 137 was already in use"]
+    correct: [0]
+    explanation: "137 = 128 + 9 (SIGKILL). Check `docker inspect --format '{{.State.OOMKilled}}'`, or in Kubernetes the `OOMKilled` reason in `kubectl describe pod`."
+
+  # ---------- Storage & networking ----------
+  - id: docker-sn-001
+    type: open
+    subtopic: storage-networking
+    level: 1
+    tags: [il-common]
+    prompt: How do you persist data in Docker? Compare volumes and bind mounts.
+    rubric:
+      keyPoints:
+        - { text: "The container's writable layer is lost when the container is removed", weight: 2 }
+        - { text: "Volumes: managed by Docker (/var/lib/docker/volumes), portable, the preferred way for app data like databases", weight: 3 }
+        - { text: "Bind mounts: map a specific host path into the container; great for dev (live code), config; depend on host layout and permissions", weight: 3 }
+        - { text: "tmpfs mounts for in-memory, non-persistent data", weight: 1 }
+    modelAnswer: |
+      Anything written inside the container's own filesystem disappears when the container is removed, so persistent data must be mounted in. A named volume, `-v pgdata:/var/lib/postgresql/data`, is created and managed by Docker. It's the standard choice for databases and is easy to back up and move. A bind mount, `-v /home/me/src:/app`, maps an exact host path into the container, which is great in development for live code reload or for injecting config files, but it depends on the host's directory layout and file permissions. There's also tmpfs for scratch data that should only live in memory.
+    explanation: "In Kubernetes the same idea becomes PersistentVolumes/PVCs (like volumes), hostPath (like bind mounts, avoid it) and emptyDir."
+
+  - id: docker-sn-002
+    type: mcq
+    subtopic: storage-networking
+    level: 2
+    prompt: Two containers on the same **user-defined** bridge network need to talk. How should `api` reach `db`?
+    options:
+      - "By the container name, e.g. `db:5432`: Docker's embedded DNS resolves it"
+      - "By the host's public IP"
+      - "Via localhost:5432"
+      - "They can't talk unless both publish ports with -p"
+    correct: [0]
+    explanation: "User-defined networks (and Compose) give automatic DNS by container or service name. `localhost` inside a container is the container itself. Ports only need publishing (`-p`) for access from **outside** Docker."
+
+  - id: docker-sn-003
+    type: mcq
+    subtopic: storage-networking
+    level: 2
+    prompt: What does `--network host` do?
+    options:
+      - "The container shares the host's network namespace: no isolation and no port mapping; it listens directly on host ports"
+      - "It gives the container a public IP"
+      - "It connects the container to every Docker network"
+      - "It disables networking"
+    correct: [0]
+    explanation: Host networking is fast and simple but gives up isolation, and port conflicts are now your problem. `--network none` disables networking. The default bridge needs `-p` to publish ports.
+
+  # ---------- Compose ----------
+  - id: docker-compose-001
+    type: open
+    subtopic: compose
+    level: 1
+    prompt: What is Docker Compose for, and what does `depends_on` actually guarantee?
+    rubric:
+      keyPoints:
+        - { text: "Compose defines and runs multi-container apps from one YAML file (services, networks, volumes); great for local dev/CI", weight: 3 }
+        - { text: "Services get a shared network and can reach each other by service name", weight: 2 }
+        - { text: "depends_on controls start ORDER only, not readiness, unless combined with a healthcheck (condition: service_healthy)", weight: 3 }
+        - { text: "Apps should still retry connections", weight: 1 }
+    modelAnswer: |
+      Compose describes a multi-container application in one `compose.yaml`: the services, their images or builds, ports, env, volumes, and a shared network where they find each other by service name. `docker compose up` runs the whole stack, which is great for local development and integration tests in CI. `depends_on` only controls start order: it waits for the db container to start, not for Postgres to be ready to accept connections. To wait for readiness, give the db a `healthcheck` and use `condition: service_healthy`. The app should also retry connections anyway, because in production things restart.
+    explanation: Compose isn't an orchestrator. For multiple hosts, self-healing and rolling updates you'd use Kubernetes (or ECS).
+
+  - id: docker-compose-002
+    type: command
+    subtopic: compose
+    level: 1
+    prompt: Start all services defined in `compose.yaml` in the background, rebuilding images first.
+    answers: ["docker compose up -d --build", "docker compose up --build -d"]
+    patterns: ['^docker[ -]compose up (?=.*(-d\b|--detach))(?=.*--build).*$']
+    samples: ["docker-compose up -d --build", "docker compose up --detach --build"]
+    rejects: ["docker compose up", "docker compose build"]
+    explanation: '`docker compose` (v2, a Docker plugin) replaced `docker-compose` (v1, Python). `down -v` also removes volumes, which is destructive.'
+
+  # ---------- Registries ----------
+  - id: docker-reg-001
+    type: open
+    subtopic: registries
+    level: 2
+    tags: [your-stack]
+    prompt: Why is deploying `myapp:latest` to production a bad idea? How should you tag images?
+    rubric:
+      keyPoints:
+        - { text: "latest is just a default tag, not 'the newest'; it's mutable and points to whatever was pushed last", weight: 2 }
+        - { text: "Not reproducible / no traceability: you can't tell what's running or roll back reliably", weight: 3 }
+        - { text: "Caching/imagePullPolicy issues: nodes may run different versions", weight: 1 }
+        - { text: "Use immutable tags: semantic version and/or git SHA; ideally deploy by digest", weight: 3 }
+    modelAnswer: |
+      `latest` is just a tag name. It's mutable and only means "whatever was pushed last without a tag". If prod runs `latest`, you can't tell which code is running, two nodes might have pulled different images, and rolling back means re-pushing an old image under the same name. Instead, tag every build with something immutable and traceable, like the git commit SHA and a semantic version for releases (`myapp:1.4.0`, `myapp:sha-3f2c9a1`). Deploy that exact tag, or even the digest `myapp@sha256:...`, which can never change. Then a rollback is just pointing back to the previous tag.
+    explanation: In my MyBroker project, the release workflow pushes images to GHCR tagged with the version and SHA, and Argo CD deploys a specific tag.
+
+  # ---------- Added: everyday basics ----------
+  - id: docker-fund-004
+    type: mcq
+    subtopic: fundamentals
+    level: 1
+    prompt: You run `docker run nginx:1.27` and the image isn't on your machine. What happens?
+    options:
+      - "Docker pulls the image from the registry (Docker Hub by default), then starts a container from it"
+      - "Docker fails with 'image not found'"
+      - "Docker builds the image from a Dockerfile in the current directory"
+      - "Docker starts an empty container"
+    correct: [0]
+    explanation: "A name without a registry, like `nginx`, means Docker Hub. Other registries are part of the name: `ghcr.io/acme/myapp:1.0`. After the first pull the image is cached locally."
+
+  - id: docker-img-004
+    type: command
+    subtopic: images
+    level: 1
+    prompt: List the Docker images stored on this machine.
+    answers: ["docker images"]
+    patterns: ['^docker (images|image ls|image list)$']
+    samples: ["docker image ls"]
+    rejects: ["docker ps", "docker ls"]
+    explanation: "Shows each image's repository, tag, ID and size. `docker image prune` removes unused images when the disk fills up."
+
+  - id: docker-img-005
+    type: command
+    subtopic: images
+    level: 1
+    prompt: Download the image `nginx:1.27` without running it.
+    answers: ["docker pull nginx:1.27"]
+    patterns: ['^docker (image )?pull nginx:1\.27$']
+    samples: ["docker image pull nginx:1.27"]
+    rejects: ["docker run nginx:1.27", "docker pull nginx"]
+    explanation: "Without a tag Docker pulls `latest`, which may not be the version you want. Pulling ahead of time is useful before a demo, or to warm up a server."
+
+  - id: docker-df-006
+    type: mcq
+    subtopic: dockerfile
+    level: 1
+    prompt: What does `EXPOSE 8080` in a Dockerfile do?
+    options:
+      - "It documents that the app listens on 8080; it does not publish the port. You still need `-p` to reach it from the host"
+      - "It opens port 8080 on the host firewall"
+      - "It makes the app listen on 8080"
+      - "It publishes port 8080 to the internet"
+    correct: [0]
+    explanation: "The app itself decides which port it listens on. `EXPOSE` is metadata that tools can read (`docker run -P` publishes all exposed ports to random host ports)."
+
+  - id: docker-df-007
+    type: mcq
+    subtopic: dockerfile
+    level: 1
+    prompt: What is the `.dockerignore` file for?
+    options:
+      - "It lists files and folders that are not sent to the build, like `.git`, `node_modules` and `.env`"
+      - "It lists containers Docker should not start"
+      - "It lists images that should not be pushed"
+      - "It hides the Dockerfile from Git"
+    correct: [0]
+    explanation: "A smaller build context makes builds faster, keeps the cache stable, and stops secrets like `.env` from ending up inside the image by accident through `COPY . .`."
+
+  - id: docker-rt-006
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: List the containers that are running right now.
+    answers: ["docker ps"]
+    patterns: ['^docker (ps|container ls|container list)$']
+    samples: ["docker container ls"]
+    rejects: ["docker images", "docker ls"]
+    explanation: "Shows the container ID, image, command, status, ports and name. Stopped containers are hidden; add `-a` to see them."
+
+  - id: docker-rt-007
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: List all containers, including the ones that have stopped.
+    answers: ["docker ps -a"]
+    patterns: ['^docker (ps|container ls) (-a|--all)$']
+    samples: ["docker ps --all", "docker container ls -a"]
+    rejects: ["docker ps", "docker images -a"]
+    explanation: "Useful when a container exits right away: you'll see it here with `Exited (code)`, and can read its logs with `docker logs`."
+
+  - id: docker-rt-008
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: Stop the running container `web` gracefully.
+    answers: ["docker stop web"]
+    patterns: ['^docker (container )?stop web$']
+    samples: ["docker container stop web"]
+    rejects: ["docker kill web", "docker rm web"]
+    explanation: "`docker stop` sends SIGTERM, waits 10 seconds, then sends SIGKILL. `docker kill` sends SIGKILL right away, so the app gets no chance to clean up."
+
+  - id: docker-rt-009
+    type: command
+    subtopic: runtime
+    level: 1
+    prompt: Delete the stopped container `web`.
+    answers: ["docker rm web"]
+    patterns: ['^docker (container )?rm( -f| --force)? web$']
+    samples: ["docker container rm web", "docker rm -f web"]
+    rejects: ["docker rmi web", "docker stop web"]
+    explanation: "`rm` removes containers and `rmi` removes images. `-f` also stops a running container first. `docker run --rm` removes the container automatically when it exits."
+
+  - id: docker-rt-010
+    type: command
+    subtopic: runtime
+    level: 2
+    prompt: Run `postgres:16` in the background, with the environment variable `POSTGRES_PASSWORD` set to `secret`.
+    answers: ["docker run -d -e POSTGRES_PASSWORD=secret postgres:16"]
+    patterns: ["^docker run (?=.*(-\\w*d\\w*\\b|--detach))(?=.*(-e|--env)[ =]POSTGRES_PASSWORD='?secret'?).* postgres:16$"]
+    samples: ["docker run -e POSTGRES_PASSWORD=secret -d postgres:16", "docker run --detach --env POSTGRES_PASSWORD=secret postgres:16"]
+    rejects: ["docker run -d postgres:16", "docker exec -e POSTGRES_PASSWORD=secret postgres:16"]
+    explanation: "`-e NAME=value` sets an env var, and `--env-file .env` loads many. Options go **before** the image name; anything after it is passed to the container's command. Env vars are visible in `docker inspect`, so real secrets belong in a secret manager."
+
+  - id: docker-sn-004
+    type: command
+    subtopic: storage-networking
+    level: 1
+    prompt: Create a named Docker volume called `pgdata`.
+    answers: ["docker volume create pgdata"]
+    patterns: ['^docker volume create pgdata$']
+    samples: []
+    rejects: ["docker volume ls", "mkdir pgdata"]
+    explanation: "Then mount it with `-v pgdata:/var/lib/postgresql/data`. `docker run` also creates the volume automatically if it doesn't exist. `docker volume ls` lists volumes."
+
+  - id: docker-reg-002
+    type: command
+    subtopic: registries
+    level: 1
+    prompt: Give the local image `myapp:1.4.0` the additional name `ghcr.io/acme/myapp:1.4.0`, so it can be pushed to GHCR.
+    answers: ["docker tag myapp:1.4.0 ghcr.io/acme/myapp:1.4.0"]
+    patterns: ['^docker (image )?tag myapp:1\.4\.0 ghcr\.io/acme/myapp:1\.4\.0$']
+    samples: ["docker image tag myapp:1.4.0 ghcr.io/acme/myapp:1.4.0"]
+    rejects: ["docker tag ghcr.io/acme/myapp:1.4.0 myapp:1.4.0", "docker push myapp:1.4.0"]
+    explanation: "`docker tag SOURCE TARGET`. The registry address is part of the image name, so to push somewhere you first give the image a name that starts with that registry. A tag is just another name; no data is copied."
+
+  - id: docker-reg-003
+    type: command
+    subtopic: registries
+    level: 1
+    prompt: Upload the image `ghcr.io/acme/myapp:1.4.0` to its registry.
+    answers: ["docker push ghcr.io/acme/myapp:1.4.0"]
+    patterns: ['^docker (image )?push ghcr\.io/acme/myapp:1\.4\.0$']
+    samples: ["docker image push ghcr.io/acme/myapp:1.4.0"]
+    rejects: ["docker push myapp:1.4.0", "docker pull ghcr.io/acme/myapp:1.4.0"]
+    explanation: "You need to log in first: `docker login ghcr.io`. Only layers the registry doesn't already have are uploaded."
+
+  - id: docker-compose-003
+    type: command
+    subtopic: compose
+    level: 1
+    prompt: Stop and remove all the containers and networks of the Compose stack, but keep the volumes (the data).
+    answers: ["docker compose down"]
+    patterns: ['^docker[ -]compose down$']
+    samples: ["docker-compose down"]
+    rejects: ["docker compose down -v", "docker compose stop"]
+    explanation: "`down` removes containers and networks. `down -v` also deletes the volumes, which wipes the database. `stop` only stops the containers and keeps them."

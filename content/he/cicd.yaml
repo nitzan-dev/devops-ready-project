@@ -1,0 +1,357 @@
+topic: cicd
+questions:
+  cicd-con-001:
+    prompt: תסבירו את ההבדל בין Continuous Integration, Continuous Delivery ו-Continuous Deployment.
+    keyPoints:
+      - "CI: מפתחים ממזגים ל-main לעתים קרובות, וכל שינוי נבנה ונבדק אוטומטית"
+      - "Continuous Delivery: כל שינוי שעבר את ה-pipeline מוכן לשחרור ונפרס ל-staging; הפריסה ל-production היא לחיצה או אישור ידני"
+      - "Continuous Deployment: כל שינוי שעבר את כל השלבים מגיע ל-production אוטומטית, בלי אישור של אדם"
+      - "המטרה: שינויים קטנים, תכופים ובסיכון נמוך, ומשוב מהיר"
+    modelAnswer: |
+      **Continuous Integration**: כולם ממזגים שינויים קטנים ל-main לעתים קרובות, וכל שינוי נבנה ונבדק אוטומטית. כך בעיות בשילוב קוד מתגלות תוך דקות, ולא בסוף הספרינט.
+      **Continuous Delivery**: צעד אחד קדימה. כל שינוי שעבר את ה-pipeline ארוז ומוכן לפריסה, ובדרך כלל נפרס אוטומטית ל-staging. ההעלאה ל-production היא החלטה עסקית: לחיצה אחת או אישור.
+      **Continuous Deployment**: גם הצעד הידני האחרון נעלם. אם כל הבדיקות עברו, השינוי עולה ל-production לבד. בשביל זה צריך בדיקות טובות מאוד, ניטור, ודרך מהירה לחזור לגרסה קודמת.
+    explanation: "בשני ה-CD יש אותו pipeline. ההבדל היחיד הוא האישור הידני לפני production."
+
+  cicd-con-002:
+    prompt: סדרו את השלבים של pipeline טיפוסי לשירות שרץ בקונטיינר.
+    steps:
+      - "להוריד את הקוד ולהתקין תלויות"
+      - "בדיקת סגנון (lint) ובדיקות יחידה"
+      - "לבנות את ה-Docker image (עם תגית של ה-commit SHA)"
+      - "לסרוק את ה-image ולהריץ בדיקות אינטגרציה"
+      - "לדחוף את ה-image ל-registry"
+      - "לפרוס ל-staging, ואחר כך להעלות ל-production"
+    explanation: נכשלים מהר. הבדיקות הזולות (lint, בדיקות יחידה) רצות קודם, כדי לא לבזבז זמן על בנייה ודחיפה של קוד שבור. בונים את ה-image פעם אחת, ומעבירים את אותו image בין הסביבות.
+
+  cicd-con-003:
+    prompt: למה "לבנות פעם אחת ולפרוס הרבה פעמים" (להעביר את אותו artifact בין הסביבות) נחשב לשיטה הנכונה?
+    options:
+      - "מה שנבדק ב-staging הוא בדיוק מה שרץ ב-production; בנייה מחדש לכל סביבה יכולה ליצור artifact אחר"
+      - "זה חוסך מקום ב-registry"
+      - "Kubernetes דורש את זה"
+      - "זה מאיץ את הבנייה"
+    explanation: |
+      בנייה מחדש ל-production יכולה למשוך גרסאות אחרות של תלויות, או base image אחר.
+      בונים פעם אחת, נותנים תגית קבועה (ה-SHA של ה-commit), ואת ההבדלים בין הסביבות מעבירים כהגדרות (משתני סביבה, Helm values), לא כבנייה אחרת.
+
+  cicd-con-004:
+    prompt: pipeline של CI לוקח 40 דקות, והמפתחים מתלוננים. איך הייתם מאיצים אותו?
+    keyPoints:
+      - "קודם מודדים: מוצאים את השלבים האיטיים"
+      - "cache לתלויות ולשכבות של Docker בין הרצות"
+      - "מריצים משימות עצמאיות במקביל (פיצול בדיקות, matrix)"
+      - "מריצים רק את מה שהשתנה (סינון לפי נתיבים, monorepo)"
+      - "runners חזקים יותר, סדר שנכשל מהר, והעברת בדיקות e2e איטיות לשלב מאוחר או להרצה לילית"
+    modelAnswer: |
+      קודם מודדים אילו שלבים באמת לוקחים זמן. אחר כך, הצעדים הרגילים:
+      - **cache** לתלויות (npm, pip, Maven) ולשכבות של Docker בין הרצות.
+      - **מקביליות**: משימות שלא תלויות זו בזו רצות במקביל, ואת הבדיקות מפצלים בין כמה runners עם matrix.
+      - **רק מה שהשתנה**: ב-monorepo מסננים לפי נתיבים.
+      - **סדר**: הבדיקות המהירות קודם, כדי שכישלון יחזור תוך דקה.
+      - בדיקות e2e איטיות עוברות לשלב מאוחר או להרצה לילית, ובכל pull request נשארת בדיקת smoke קצרה.
+      לפעמים runner חזק יותר פשוט זול יותר מזמן של מפתחים. וגם כדאי לתקן בדיקות לא יציבות (flaky), שגורמות להרצות חוזרות.
+    explanation: משוב מהיר הוא כל העניין של CI. צוותים שואפים בדרך כלל לפחות מ-10 דקות ל-pipeline של pull request.
+
+  cicd-con-005:
+    prompt: מה זה "pipeline" ב-CI/CD?
+    options:
+      - "סדרת שלבים אוטומטית (בנייה, בדיקות, סריקה, פריסה) שרצה על כל שינוי"
+      - "כבל רשת בין שרתים"
+      - "ענף ב-Git לשחרור גרסאות"
+      - "רשימת משימות לספרינט"
+    explanation: |
+      כל שלב חייב לעבור לפני שהבא מתחיל. אם שלב נכשל, ה-pipeline עוצר והשינוי לא ממשיך.
+      ה-pipeline עצמו כתוב כקוד בתוך ה-repo (קובץ workflow ב-YAML, או Jenkinsfile).
+
+  cicd-con-006:
+    prompt: למה מריצים בנייה ובדיקות על כל pull request, לפני המיזוג?
+    options:
+      - "כדי לתפוס בעיות לפני שהן מגיעות ל-main, כשהשינוי עוד קטן והכותב עוד זוכר אותו"
+      - "כי Git דורש את זה"
+      - "כדי שה-pull request ייקח יותר זמן"
+      - "כדי שהבודק לא יצטרך לקרוא את הקוד"
+    explanation: "אפשר להגדיר (branch protection) שאי אפשר למזג בלי שהבדיקות עברו, וכך main נשאר תקין. בדיקות אוטומטיות לא מחליפות code review. הן משחררות את הבודק לחשוב על התכנון ועל הלוגיקה."
+
+  cicd-con-007:
+    prompt: ה-pipeline על `main` אדום (נכשל). מה הצוות צריך לעשות?
+    options:
+      - "לתקן מיד, או לבטל (revert) את ה-commit ששבר; main שבור עוצר את כולם"
+      - "להמשיך למזג; יתקנו בסוף הספרינט"
+      - "לכבות את הבדיקות שנכשלות כדי שיהיה ירוק"
+      - "למחוק את ה-pipeline"
+    explanation: "כש-main אדום, אי אפשר לסמוך על שום מיזוג או שחרור. הכלל הרגיל: מי ששבר מתקן עכשיו, או עושה revert. לדלג על בדיקות או למחוק אותן רק מסתיר את הבעיה."
+
+  cicd-gha-001:
+    prompt: 'תסבירו את המבנה של GitHub Actions: workflow, job, step, runner ו-triggers.'
+    keyPoints:
+      - "workflow: קובץ YAML בתיקייה .github/workflows, שמופעל על ידי אירועים (on: push, pull_request, schedule, workflow_dispatch, תגיות)"
+      - "jobs: רצים במקביל כברירת מחדל, כל אחד על runner נפרד; needs: יוצר סדר ביניהם"
+      - "steps: פקודות (run:) או actions מוכנות (uses:) שרצות לפי הסדר בתוך job, על אותה מכונה"
+      - "runner: המכונה שמריצה את ה-job (של GitHub, או מכונה שלכם, self-hosted)"
+    modelAnswer: |
+      **workflow** הוא קובץ YAML בתיקייה `.github/workflows/`. הוא מופעל לפי אירועים שמוגדרים ב-`on:`: `push`, `pull_request`, תזמון (`schedule`), הפעלה ידנית (`workflow_dispatch`), או דחיפה של תגית.
+      בתוך workflow יש **jobs**. כל job רץ על **runner** חדש משלו: מכונה של GitHub, או מכונה שלכם (self-hosted). jobs רצים במקביל, אלא אם מחברים אותם עם `needs:`.
+      job הוא רשימה של **steps**, שרצים לפי הסדר על אותה מכונה: פקודות shell עם `run:`, או actions מוכנות עם `uses:`, כמו `actions/checkout` או `docker/build-push-action`.
+      ל-jobs אין דיסק משותף, ולכן מעבירים ביניהם מידע עם artifacts או outputs.
+    explanation: "ב-MyBroker, `ci.yml` מריץ lint, בדיקת טיפוסים, בדיקות ובניית Docker על כל pull request, ו-`release.yml` בונה ודוחף את ה-image ל-GHCR כשנדחפת תגית."
+
+  cicd-gha-002:
+    prompt: איך workflow של GitHub Actions צריך להתחבר ל-AWS כדי לפרוס, לפי השיטה המומלצת היום?
+    options:
+      - "OIDC: ה-workflow מקבל מ-GitHub token קצר-מועד, ומקבל איתו IAM role (בלי מפתחות AWS שמורים)"
+      - "לשמור את המפתח והסוד של IAM user ב-secrets של ה-repo"
+      - "לכתוב את המפתחות ישירות בקובץ ה-workflow"
+      - "להשתמש בפרטי ההתחברות של חשבון ה-root"
+    explanation: "עם OIDC (`permissions: id-token: write` ו-`aws-actions/configure-aws-credentials`), AWS סומכת על token הזהות של GitHub, רק ל-repo ול-branch מסוימים, ונותנת הרשאות זמניות. אין שום מפתח קבוע שיכול לדלוף."
+
+  cicd-gha-003:
+    prompt: מה עושה `strategy.matrix` ב-job של GitHub Actions?
+    options:
+      - "מריץ את אותו job כמה פעמים במקביל, עם צירופים שונים של משתנים (למשל Node 20 ו-22, על ubuntu ועל windows)"
+      - "מריץ את ה-steps בסדר אקראי"
+      - "מצפין secrets"
+      - "שומר תלויות ב-cache"
+    explanation: 'matrix מתאים לבדיקה על כמה גרסאות או מערכות הפעלה, או לפיצול בדיקות לחלקים. `fail-fast: false` משאיר את שאר הצירופים רצים כשאחד נכשל.'
+
+  cicd-gha-004:
+    prompt: איך מטפלים ב-secrets ב-GitHub Actions, ומה הסיכון ב-pull requests שמגיעים מ-fork?
+    keyPoints:
+      - "שומרים אותם כ-secrets של repo, סביבה (environment) או ארגון, ומשתמשים בהם עם ${{ secrets.X }}; GitHub מסתיר אותם בלוגים"
+      - "environment יכול לדרוש אישור, ולהגביל secrets ל-branches מסוימים"
+      - "workflows שמופעלים מ-pull_request של fork לא מקבלים secrets, בכוונה, כי הקוד ב-PR לא מהימן"
+      - "pull_request_target רץ עם secrets של ה-repo המקורי; להוריד ולהריץ שם את הקוד של ה-fork זה מסוכן"
+      - "הרשאות מינימליות ל-GITHUB_TOKEN; עדיף OIDC על מפתחות קבועים"
+    modelAnswer: |
+      שומרים secrets ברמת ה-repo, הארגון או ה-environment, ומשתמשים בהם כ-`${{ secrets.NAME }}`. GitHub מסתיר אותם בלוגים. עם environment ואישור של בודק, אפשר לחסום פריסה ל-production עד שמישהו מאשר.
+      הסיכון העיקרי הוא קוד לא מהימן: pull request מ-fork יכול לשנות את ה-workflow או את הבדיקות כך שידפיסו או ישלחו את ה-secrets. לכן workflows של `pull_request` מ-fork לא מקבלים secrets.
+      `pull_request_target` כן רץ עם secrets, ולכן להוריד ולהריץ בו את הקוד של ה-fork זו דרך ידועה להדליף אותם.
+      בנוסף: `permissions:` מינימליות ל-`GITHUB_TOKEN`, נעילת actions חיצוניות ל-SHA של commit, ו-OIDC במקום מפתחות ענן שמורים.
+    explanation: "actions חיצוניות רצות עם ה-token וה-secrets שלכם. נעילה ל-SHA מגינה מתגית שמישהו השתלט עליה."
+
+  cicd-gha-005:
+    prompt: איזה trigger מפעיל workflow כשנדחפת תגית כמו `v1.2.0`?
+    options:
+      - "`on: push: tags: ['v*']`"
+      - "`on: release_tag`"
+      - "`on: pull_request: tags`"
+      - "`on: schedule: tags`"
+    explanation: workflow של שחרור גרסה שמופעל מתגית הוא דבר נפוץ. בונים, נותנים ל-image את מספר הגרסה, דוחפים, ויוצרים release ב-GitHub.
+
+  cicd-gha-006:
+    prompt: איפה נמצאים קובצי ה-workflow של GitHub Actions בתוך ה-repo?
+    options: ["`.github/workflows/*.yml`", "`/etc/github/actions`", "`workflows.json` בתיקייה הראשית", "רק בהגדרות באתר של GitHub"]
+    explanation: "כל קובץ YAML שם הוא workflow נפרד. מכיוון שהם בתוך ה-repo, שינויים ב-pipeline עוברים pull request ו-review כמו כל קוד אחר."
+
+  cicd-gha-007:
+    prompt: 'ב-workflow, ל-job בשם `deploy` יש `needs: test`. מה זה עושה?'
+    options:
+      - "`deploy` מחכה ש-`test` יסתיים, ורץ רק אם `test` הצליח"
+      - "`deploy` ו-`test` רצים באותו זמן"
+      - "`deploy` רץ רק אם `test` נכשל"
+      - "`test` מדולג"
+    explanation: "כברירת מחדל jobs רצים במקביל. `needs:` קובע סדר ביניהם. job יכול לחכות לכמה jobs: `needs: [lint, test]`."
+
+  cicd-gha-008:
+    prompt: 'למה רוב ה-jobs מתחילים ב-`uses: actions/checkout@v4`?'
+    options:
+      - "כל job רץ על runner חדש בלי קוד; checkout מוריד (clone) את ה-repo לתיקיית העבודה"
+      - "הוא בודק שקובץ ה-workflow תקין"
+      - "הוא מתחבר ל-GitHub"
+      - "הוא יוצר branch חדש לשחרור"
+    explanation: "runner מתחיל ריק. בלי checkout, ל-steps כמו `npm test` אין קוד להריץ. `uses:` מריץ action מוכנה, ו-`run:` מריץ פקודת shell."
+
+  cicd-gha-009:
+    prompt: ה-job בשם `build` יוצר תיקייה `dist/`, וה-job בשם `deploy` צריך אותה. איך מעבירים אותה?
+    options:
+      - "מעלים אותה עם `actions/upload-artifact` ב-`build`, ומורידים עם `actions/download-artifact` ב-`deploy`"
+      - "היא כבר שם, כי לכל ה-jobs יש דיסק משותף"
+      - "עושים commit של `dist/` ל-repo מתוך ה-pipeline"
+      - "שומרים אותה במשתנה סביבה"
+    explanation: "כל job רץ על runner משלו, ולכן קבצים לא עוברים לבד. artifacts מעבירים קבצים בין jobs, ואפשר גם להוריד אותם מדף ההרצה. ערכים קטנים מעבירים דרך `outputs` של ה-job."
+
+  cicd-gha-010:
+    prompt: תארו workflow של GitHub Actions לשירות Node.js, שבודק כל pull request, ובמיזוג ל-main בונה Docker image ודוחף אותו.
+    keyPoints:
+      - "triggers: on pull_request, ו-on push ל-main"
+      - "job של בדיקות: checkout, setup-node עם cache לתלויות, התקנה, lint ובדיקות"
+      - "job של בנייה שתלוי (needs) ב-job הבדיקות; ה-image מקבל תגית של ה-commit SHA"
+      - "דוחפים רק מ-main (תנאי if:), עם התחברות ל-registry דרך GITHUB_TOKEN או secret"
+      - "הרשאות מינימליות (למשל contents: read, packages: write)"
+    modelAnswer: |
+      **triggers**: `on: pull_request`, וגם `on: push: branches: [main]`.
+      **job בדיקות**: `actions/checkout`, ואז `actions/setup-node` עם `cache: npm`, ואז `npm ci`, lint ו-`npm test`.
+      **job בנייה** עם `needs: test`. הוא בונה את ה-image עם `docker/build-push-action`, עם התגית `${{ github.sha }}`.
+      הדחיפה קורית רק ב-main: `if: github.ref == 'refs/heads/main'`, אחרי ש-`docker/login-action` מתחבר ל-GHCR עם `GITHUB_TOKEN`. ב-pull request הוא רק בונה, כדי לבדוק שה-Dockerfile עובד.
+      מגדירים `permissions:` מינימליות (contents: read, packages: write), ומשתמשים ב-cache של שכבות Docker כדי שיהיה מהיר.
+    explanation: "זה קרוב ל-`ci.yml` ול-`release.yml` של MyBroker. כדאי להיות מוכנים לתאר את ה-pipeline שלכם שורה אחרי שורה."
+
+  cicd-jenkins-001:
+    prompt: מה זה Jenkinsfile, ומה ההבדל בין pipeline מסוג declarative ל-pipeline מסוג scripted?
+    keyPoints:
+      - "Jenkinsfile מגדיר את ה-pipeline כקוד, ונשמר ב-repo יחד עם האפליקציה"
+      - "declarative: תחביר מובנה וקבוע (pipeline { agent, stages, steps, post })"
+      - "scripted: Groovy מלא; גמיש יותר, אבל קשה יותר לקרוא ולתחזק"
+      - "pipeline כקוד נותן היסטוריית גרסאות, review ויכולת לשחזר"
+    modelAnswer: |
+      Jenkinsfile הוא "pipeline כקוד": ההגדרה של ה-pipeline נמצאת ב-repo ליד האפליקציה, ולכן יש לה היסטוריה ו-review כמו לכל קוד אחר.
+      יש שני סוגי תחביר:
+      - **declarative**: המובנה. בלוק `pipeline {}` עם `agent`, `stages`, `steps`, `environment`, תנאי `when`, ופעולות `post` (תמיד, או רק בכישלון). קל לקרוא ולבדוק אותו, וזו ברירת המחדל המומלצת.
+      - **scripted**: Groovy רגיל בתוך בלוקים של `node {}`. גמיש יותר, עם לולאות ולוגיקה מורכבת, אבל קשה יותר לתחזק.
+      קוד משותף בין pipelines שמים בדרך כלל ב-Shared Libraries.
+    explanation: "Jenkins עדיין נפוץ מאוד בחברות בישראל, הרבה פעמים עם agents שרצים כ-pods ב-Kubernetes."
+
+  cicd-jenkins-002:
+    prompt: השוו בין Jenkins ל-GitHub Actions. מתי הייתם בוחרים בכל אחד?
+    keyPoints:
+      - "Jenkins: מותקן אצלכם; אתם מריצים ומתחזקים את ה-controller, ה-agents, ה-plugins, השדרוגים והאבטחה"
+      - "Jenkins: גמיש מאוד, המון plugins, עובד עם כל מערכת Git, מתאים לשרתים פנימיים ול-pipelines ישנים ומורכבים"
+      - "GitHub Actions: שירות מנוהל, משולב ב-GitHub (pull requests, checks, marketplace), YAML, runners מוכנים, כמעט בלי תחזוקה"
+      - "שיקולים: עלות בהיקף גדול, דרישה שהקוד לא יצא מהרשת, בעיות אבטחה ב-plugins, מול תלות בספק"
+    modelAnswer: |
+      **Jenkins** מותקן אצלכם. אתם מריצים את ה-controller ואת ה-agents, מנהלים plugins ושדרוגים, ודואגים לאבטחה. בתמורה הוא גמיש מאוד, עובד עם כל מערכת Git, ורץ בתוך הרשת הפנימית כשאסור לקוד לצאת החוצה. להרבה חברות יש שנים של pipelines ב-Jenkins.
+      **GitHub Actions** הוא שירות מנוהל בתוך GitHub. ה-workflows הם YAML ב-repo, הוא משולב ב-pull requests וב-checks, יש לו marketplace גדול של actions, וה-runners המוכנים אומרים כמעט אפס תחזוקה. אפשר להוסיף גם runners משלכם.
+      לפרויקט חדש שכבר נמצא ב-GitHub, Actions היא הבחירה הטבעית. כשיש דרישה לרשת פנימית, מערכת Git שאינה GitHub, או הרבה pipelines קיימים ב-Jenkins, Jenkins הגיוני.
+      הבעיות הרגילות של Jenkins: יותר מדי plugins, וחולשות אבטחה בהם.
+    explanation: "עוד כלים שתשמעו עליהם: GitLab CI (דומה ל-Actions, ל-GitLab), CircleCI, Azure DevOps, ו-Argo Workflows או Tekton (שרצים בתוך Kubernetes)."
+
+  cicd-jenkins-003:
+    prompt: ב-Jenkins, מה ההבדל בין ה-controller ל-agents?
+    options:
+      - "ה-controller מתזמן משימות, שומר הגדרות ומציג את הממשק; ה-agents מריצים את הבנייה. לא מומלץ להריץ בנייה על ה-controller"
+      - "agents הם plugins"
+      - "ה-controller מריץ את הבנייה; ה-agents רק שומרים לוגים"
+      - "זה אותו תהליך"
+    explanation: בנייה על ה-controller היא סיכון לאבטחה וליציבות, כי בנייה יכולה לקרוא secrets של Jenkins או להעמיס על השרת. משתמשים ב-agents קבועים או זמניים, למשל ה-plugin של Kubernetes, שיוצר pod לכל בנייה.
+
+  cicd-jenkins-004:
+    prompt: מה הדרך הטובה יותר לגרום ל-Jenkins להתחיל בנייה כשדוחפים קוד?
+    options:
+      - "webhook משרת ה-Git, שמודיע ל-Jenkins על הדחיפה מיד"
+      - "לבדוק את ה-repo כל דקה (polling)"
+      - "לבקש מהמפתחים ללחוץ Build"
+      - "cron שמפעיל מחדש את Jenkins"
+    explanation: "polling (\"Poll SCM\") עובד, אבל הוא איטי ומוסיף עומס. עם webhook, GitHub או GitLab שולחים בקשת HTTP ל-Jenkins על כל דחיפה, והבנייה מתחילה תוך שניות."
+
+  cicd-deploy-001:
+    prompt: תסבירו פריסה מסוג rolling, blue/green ו-canary, עם יתרון וחיסרון לכל אחת.
+    keyPoints:
+      - "rolling: מחליפים שרתים בהדרגה; לא צריך תשתית נוספת, אבל שתי גרסאות רצות ביחד, והחזרה לאחור גם היא הדרגתית"
+      - "blue/green: מקימים את הגרסה החדשה בסביבה מלאה במקביל, ומעבירים את כל התעבורה בבת אחת; חזרה מיידית, אבל צריך כפול משאבים"
+      - "canary: שולחים אחוז קטן מהתעבורה לגרסה החדשה, בודקים מטריקות, ומגדילים בהדרגה; מגביל את הנזק, אבל צריך ניטור טוב ופיצול תעבורה"
+      - "מזכיר feature flags, או בדיקה וחזרה אוטומטיות (למשל Argo Rollouts)"
+    modelAnswer: |
+      **rolling**: מחליפים את השרתים הישנים בחדשים, כמה בכל פעם. זו ברירת המחדל ב-Kubernetes, ולא צריך משאבים נוספים. החיסרון: לזמן מה שתי הגרסאות מקבלות תעבורה (ולכן הן חייבות להתאים זו לזו), וחזרה לאחור היא עוד פריסה הדרגתית.
+      **blue/green**: מקימים את הגרסה החדשה (green) ליד הנוכחית (blue), בגודל מלא. בודקים אותה, ואז מעבירים את כל התעבורה בבת אחת ב-load balancer. חזרה לאחור היא החלפה מיידית בחזרה, אבל משלמים על כפול משאבים בזמן המעבר, וצריך זהירות עם מסד הנתונים.
+      **canary**: משחררים את הגרסה החדשה לחלק קטן מהתעבורה, נניח 5%, משווים שגיאות וזמני תגובה לגרסה הישנה, ומגדילים בהדרגה. זה מגביל את הנזק של גרסה גרועה, אבל צריך פיצול תעבורה ומטריקות טובות. הרבה פעמים מבצעים את זה אוטומטית עם Argo Rollouts או Flagger.
+    explanation: "feature flags מפרידים בין פריסת הקוד לבין הפעלת הפיצ'ר, והם משלימים את שלוש השיטות."
+
+  cicd-deploy-002:
+    prompt: הגרסה החדשה מוסיפה עמודה למסד הנתונים ומשנה שם של עמודה אחרת. למה זה מסוכן בפריסת rolling, ומה הדרך הבטוחה?
+    options:
+      - "הגרסה הישנה והחדשה רצות ביחד מול אותו מסד; עושים שינויים שתואמים לאחור (expand/contract): קודם מוסיפים, מעבירים נתונים, ומוחקים את העמודה הישנה בגרסה מאוחרת יותר"
+      - "בפריסת rolling אי אפשר להריץ שינויים במסד בכלל"
+      - "זה מסוכן רק ב-blue/green"
+      - "שינוי שם של עמודה תמיד בטוח"
+    explanation: "expand/contract (נקרא גם parallel change) שומר על כל פריסה תואמת לאחור, כך שאפשר להתקדם ולחזור בבטחה."
+
+  cicd-deploy-003:
+    prompt: פרסתם גרסה, ואחוז השגיאות קפץ. מה אתם עושים?
+    keyPoints:
+      - "מוודאים קשר: הקפיצה התחילה עם הפריסה (דשבורדים, סימוני פריסה)"
+      - "קודם מצמצמים נזק: חוזרים לגרסה הקודמת (או מכבים את ה-feature flag), ולא מחפשים באג ב-production"
+      - "מעדכנים: מודיעים לצוות או בערוץ התקלות, ופועלים לפי נוהל התקלות"
+      - "אחרי ההתאוששות: מוצאים את שורש הבעיה מהלוגים ומה-diff, מוסיפים בדיקה, ועושים postmortem בלי האשמות"
+      - "משפרים את ה-pipeline: canary, או חזרה אוטומטית לפי מטריקות שגיאה"
+    modelAnswer: |
+      קודם מוודאים שזו הפריסה: האם הקפיצה בשגיאות מתחילה בזמן הפריסה בדשבורדים, והאם היא קשורה ל-pods של הגרסה החדשה?
+      אם כן, **קודם מתקנים את המצב ורק אחר כך מחפשים את הסיבה**: חוזרים לגרסה הקודמת (`kubectl rollout undo`, revert ל-commit ב-GitOps, או כיבוי ה-feature flag), ומודיעים בערוץ של הצוות או של התקלות.
+      כשהשגיאות חוזרות לרגיל, מוצאים את שורש הבעיה מהלוגים ומה-diff, מתקנים, ומוסיפים בדיקה שהייתה תופסת את זה.
+      אחר כך postmortem קצר בלי האשמות, ואולי שיפור ל-pipeline, למשל שלב canary שחוזר אוטומטית כשאחוז השגיאות עולה.
+    explanation: '"קודם לחזור לגרסה הקודמת" זו התשובה שמראיינים רוצים לשמוע. בזמן תקלה, להחזיר את השירות חשוב יותר ממציאת הסיבה.'
+
+  cicd-deploy-004:
+    prompt: מה זה feature flag?
+    options:
+      - "מתג בהגדרות שמדליק או מכבה פיצ'ר, בלי לפרוס קוד חדש"
+      - "תגית ב-Git שמסמנת גרסה"
+      - "תווית על pull request"
+      - "annotation ב-Kubernetes"
+    explanation: "אפשר לפרוס קוד עם פיצ'ר כבוי, להדליק אותו ל-5% מהמשתמשים, ולכבות מיד אם משהו נשבר. כך מפרידים בין \"פריסה\" לבין \"שחרור\"."
+
+  cicd-deploy-005:
+    prompt: למה לצוותים יש סביבת **staging** בין הפיתוח ל-production?
+    options:
+      - "כדי לבדוק את הגרסה בסביבה שדומה ל-production, לפני שמשתמשים אמיתיים רואים אותה"
+      - "כדי לשמור גיבויים של production"
+      - "כדי שלמפתחים יהיה איפה לכתוב קוד"
+      - "כי Kubernetes צריך שלושה namespaces"
+    explanation: "staging צריכה להיות כמה שיותר דומה ל-production: אותו image, אותו סוג הגדרות ותשתית, רק בגודל קטן יותר. אותו image עובר מ-staging ל-production, ורק ההגדרות משתנות."
+
+  cicd-sec-001:
+    prompt: מה שייך ל-pipeline מאובטח? (סמנו את כל הנכונות.)
+    options:
+      - "סריקה שתופסת מפתחות שדלפו לקוד (למשל gitleaks)"
+      - "סריקת חולשות בתלויות וב-images (למשל Trivy)"
+      - "הרשאות מינימליות, רצוי קצרות-מועד (OIDC)"
+      - "להדפיס את משתני הסביבה ללוג כדי לדבג"
+    explanation: "\"shift left\": תופסים בעיות ב-pipeline, לא ב-production. אף פעם לא מדפיסים secrets. ההסתרה בלוגים לא מושלמת (base64 או מחרוזת מפוצלת עוברים אותה)."
+
+  cicd-sec-002:
+    prompt: מפתח דחף בטעות מפתח גישה של AWS ל-repo ציבורי ב-GitHub. מה עושים?
+    keyPoints:
+      - "מבטלים את המפתח מיד ומחליפים אותו; צריך להניח שהוא נגנב, גם אם מחקו אותו מ-Git"
+      - "בודקים ב-CloudTrail ובחיוב אם תוקפים השתמשו בו, ועוצרים את הנזק"
+      - "מחיקה מההיסטוריה (git filter-repo, BFG) היא משנית; המפתח כבר נאסף"
+      - "מונעים חזרה: סריקת secrets ב-pre-commit וב-CI, push protection, ו-OIDC או roles במקום מפתחות קבועים"
+    modelAnswer: |
+      מתייחסים למפתח כגנוב, מיד. בוטים סורקים את GitHub ומוצאים מפתחות תוך דקות.
+      1. מבטלים ומוחקים את המפתח ב-IAM, ויוצרים חדש רק אם באמת צריך.
+      2. בודקים ב-CloudTrail מה המפתח עשה, ומחפשים משאבים לא צפויים בכל ה-regions (למשל שרתים שכורים ככסף קריפטו), וחריגות בחיוב. מנקים, ופועלים לפי נוהל התקלות.
+      3. כתיבה מחדש של היסטוריית Git עם git filter-repo או BFG היא היגיינה טובה, אבל היא לא מבטלת את החשיפה.
+      4. מונעים את הפעם הבאה: push protection וסריקת secrets של GitHub, gitleaks ב-pre-commit וב-CI, ובעיקר לא להשתמש במפתחות קבועים בכלל, אלא ב-IAM roles וב-OIDC.
+    explanation: קודם מחליפים את המפתח, ורק אחר כך מנקים. מחיקת ה-commit היא לא תיקון.
+
+  cicd-art-001:
+    prompt: מה הדרך הכי טובה לתייג Docker image שנבנה ב-CI, כדי שתמיד תדעו איזה קוד יש בו?
+    options:
+      - "לפי ה-SHA של ה-commit (ובשחרורים גם מספר גרסה)"
+      - "תמיד `latest`"
+      - "רק לפי תאריך הבנייה"
+      - "לפי שם המפתח"
+    explanation: "תגית SHA מקשרת את ה-image ל-commit המדויק. בשחרורים מוסיפים גם תגית גרסה. לפריסות לא משתמשים בתגיות שמשתנות, כמו `latest`."
+
+  cicd-art-002:
+    prompt: מה זה semantic versioning, ואיך זה עוזר בפריסות?
+    keyPoints:
+      - "MAJOR.MINOR.PATCH"
+      - "MAJOR לשינויים ששוברים תאימות, MINOR לפיצ'רים שתואמים לאחור, PATCH לתיקונים שתואמים לאחור"
+      - "מראה כמה שדרוג מסוכן, ומאפשר לנעול טווח גרסאות"
+      - "אפשר לבצע את זה אוטומטית לפי הודעות ה-commit (conventional commits) ב-pipeline של השחרור"
+    modelAnswer: |
+      semantic versioning הוא MAJOR.MINOR.PATCH:
+      - **PATCH** עולה בתיקון באג שתואם לאחור.
+      - **MINOR** עולה בפיצ'ר חדש שתואם לאחור.
+      - **MAJOR** עולה כששוברים תאימות.
+      כך מספר הגרסה עצמו אומר כמה השדרוג מסוכן: מ-1.4.2 ל-1.4.3 אמור להיות בטוח, ומ-1.x ל-2.0 צריך תשומת לב.
+      מנהלי תלויות, וגם תלויות של Helm charts, יכולים לנעול טווח בטוח כמו `^1.4`.
+      ב-CI אפשר לעשות את זה אוטומטית עם conventional commits (`feat:`, `fix:`, `feat!:`) וכלי שחרור שמעלה את הגרסה, מוסיף תגית ל-repo ובונה image תואם.
+    explanation: "ל-Helm chart יש שתי גרסאות: `version` (של ה-chart) ו-`appVersion` (של האפליקציה שבתוכו)."
+
+  cicd-art-003:
+    prompt: מה זה container registry?
+    options:
+      - "שירות ששומר Docker images ומגיש אותם, כמו Docker Hub, GHCR או Amazon ECR"
+      - "רשימה של הקונטיינרים שרצים על שרת"
+      - "מסד הנתונים של Kubernetes"
+      - "כלי שבונה Dockerfiles"
+    explanation: "ה-CI דוחף את ה-image ל-registry, ושרתים או Kubernetes מושכים אותו משם. כדי למשוך מ-registry פרטי צריך פרטי התחברות (ב-Kubernetes זה `imagePullSecret`)."
+
+  cicd-art-004:
+    prompt: איך בדרך כלל עובד cache של תלויות ב-CI, למשל ל-`node_modules`?
+    options:
+      - "מפתח ה-cache כולל hash של קובץ ה-lock, כך שה-cache משמש שוב ושוב עד שהתלויות משתנות"
+      - "ה-cache משותף עם שרתי production"
+      - "התלויות יורדות פעם אחת ולא מתעדכנות לעולם"
+      - "cache אפשרי רק על runners שלכם (self-hosted)"
+    explanation: "מפתח לדוגמה: `npm-${{ hashFiles('package-lock.json') }}`. כשקובץ ה-lock משתנה, המפתח משתנה וה-cache נבנה מחדש. לרוב ה-actions של התקנה (`setup-node`, `setup-python`) יש אפשרות `cache:` שעושה את זה בשבילכם."

@@ -1,0 +1,328 @@
+topic: docker
+questions:
+  docker-fund-001:
+    prompt: מה ההבדל בין קונטיינר למכונה וירטואלית (VM)?
+    keyPoints:
+      - "VM מדמה חומרה: בכל VM רצה מערכת הפעלה מלאה, מעל hypervisor"
+      - "קונטיינרים משתמשים בקרנל של השרת המארח, ורק מבודדים תהליכים (namespaces ו-cgroups)"
+      - "קונטיינרים קלים יותר: עולים בשניות או פחות, קטנים יותר, ונכנסים יותר מהם על שרת"
+      - "VM מבודד יותר (קרנל נפרד); בקונטיינרים הקרנל משותף, ולכן שטח התקיפה גדול יותר, ואי אפשר להריץ קרנל או מערכת הפעלה מסוג אחר"
+    modelAnswer: |
+      **VM** מדמה חומרה. hypervisor מריץ כמה מערכות הפעלה מלאות, ולכל אחת יש קרנל משלה. לכן VM כבד (ג'יגה-בייטים, דקות לעלות), אבל מבודד היטב.
+      **קונטיינר** הוא בסך הכול קבוצה של תהליכים על השרת, שמשתמשים בקרנל של השרת.
+      - **namespaces** נותנים לו תצוגה משלו של תהליכים, רשת, מערכת קבצים ושם מחשב.
+      - **cgroups** מגבילים כמה CPU וזיכרון הוא יכול לקחת.
+      לכן קונטיינר שוקל מגה-בייטים, עולה תוך שנייה, ונכנסים הרבה יותר מהם על שרת אחד.
+      החיסרון: הבידוד חלש יותר, כי כולם חולקים קרנל אחד, ואי אפשר להריץ קונטיינר של Windows על קרנל של Linux. בענן מריצים הרבה פעמים קונטיינרים בתוך VMs.
+    explanation: "ב-Mac, Docker Desktop מריץ VM קטן של Linux, כי קונטיינרים צריכים קרנל של Linux."
+    followUps: ["אילו יכולות של הקרנל של Linux מאפשרות קונטיינרים?"]
+
+  docker-fund-002:
+    prompt: אילו יכולות של הקרנל של Linux מאפשרות קונטיינרים? תסבירו מה זה namespaces ומה זה cgroups.
+    keyPoints:
+      - "namespaces מגבילים מה התהליך **רואה**"
+      - "דוגמאות: PID, network, mount, UTS (שם מחשב), IPC, user"
+      - "cgroups מגבילים ומודדים כמה התהליך **משתמש**: CPU, זיכרון, דיסק, מספר תהליכים"
+      - "בנוסף: מערכת קבצים בשכבות (overlayfs), ומנגנוני אבטחה כמו capabilities ו-seccomp"
+    modelAnswer: |
+      שני מנגנונים עיקריים:
+      **namespaces** קובעים מה התהליך רואה.
+      - PID namespace נותן לקונטיינר עץ תהליכים משלו, שבו האפליקציה היא PID 1.
+      - network namespace נותן לו כרטיסי רשת ופורטים משלו.
+      - יש גם mount, UTS (שם המחשב), IPC ו-user namespaces.
+      **cgroups** (control groups) קובעים כמה הוא יכול להשתמש: CPU, מגבלת זיכרון (מי שעובר אותה נהרג, OOM), דיסק ומספר תהליכים.
+      מעל זה, ה-image נטען כמערכת קבצים בשכבות (overlayfs), ו-capabilities ו-seccomp מגבילים מה root בתוך הקונטיינר יכול לעשות.
+    explanation: "`docker run --memory=256m --cpus=0.5` מגדיר מגבלות cgroups. גם requests ו-limits ב-Kubernetes הופכים לאותם cgroups."
+
+  docker-fund-003:
+    prompt: מה ההבדל בין image לקונטיינר?
+    options:
+      - "image הוא תבנית לקריאה בלבד (שכבות ומידע); קונטיינר הוא עותק שרץ (או שנעצר) ממנה, עם שכבה שאפשר לכתוב בה"
+      - "זה אותו דבר"
+      - "קונטיינר הוא הקובץ שדוחפים ל-registry; image הוא מה שרץ"
+      - "image יכול לרוץ רק על המחשב שבו הוא נבנה"
+    explanation: "כמו class ו-object. מ-image אחד אפשר להריץ הרבה קונטיינרים. שינויים בתוך קונטיינר נכתבים לשכבה הדקה שלו, והם נעלמים כשמוחקים אותו, אלא אם הם ב-volume."
+
+  docker-fund-004:
+    prompt: מריצים `docker run nginx:1.27`, וה-image לא נמצא במחשב. מה קורה?
+    options:
+      - "Docker מוריד את ה-image מה-registry (כברירת מחדל Docker Hub), ואז מפעיל ממנו קונטיינר"
+      - "Docker נכשל עם 'image not found'"
+      - "Docker בונה את ה-image מ-Dockerfile בתיקייה הנוכחית"
+      - "Docker מפעיל קונטיינר ריק"
+    explanation: "שם בלי registry, כמו `nginx`, אומר Docker Hub. registry אחר הוא חלק מהשם: `ghcr.io/acme/myapp:1.0`. אחרי ההורדה הראשונה ה-image נשמר במחשב."
+
+  docker-img-001:
+    prompt: איך עובד ה-cache של Docker בזמן בנייה, ובאיזה סדר כדאי לכתוב Dockerfile כדי שהבנייה תהיה מהירה?
+    keyPoints:
+      - "כל הוראה יוצרת שכבה; Docker משתמש שוב בשכבה שמורה אם ההוראה והקלט שלה לא השתנו"
+      - "ברגע ששכבה אחת משתנה, כל השכבות שאחריה נבנות מחדש"
+      - "מה שמשתנה לעתים רחוקות בא קודם: מעתיקים את קובצי התלויות (package.json, requirements.txt) ומתקינים **לפני** שמעתיקים את הקוד"
+      - "‏.dockerignore מונע שליחה של קבצים מיותרים, שגם שוברים את ה-cache"
+    modelAnswer: |
+      כל הוראה ב-Dockerfile יוצרת שכבה. Docker משתמש שוב בשכבה שמורה כשההוראה והקלט שלה (ב-COPY, התוכן של הקבצים) לא השתנו.
+      הבעיה: ברגע ששכבה משתנה, **כל** השכבות שאחריה נבנות מחדש.
+      לכן מסדרים ממה שמשתנה הכי מעט למה שמשתנה הכי הרבה:
+      1. base image.
+      2. חבילות מערכת.
+      3. מעתיקים **רק** את קובצי התלויות, כמו `package.json` וקובץ ה-lock, ומריצים התקנה.
+      4. רק עכשיו `COPY . .` של הקוד.
+      כך שינוי בקוד משתמש שוב בשכבת התלויות היקרה.
+      `.dockerignore` משאיר בחוץ את `node_modules`, `.git` ו-secrets, כדי שלא ישברו את ה-cache ולא ייכנסו ל-image.
+    explanation: "ב-CI משתמשים ב-cache של BuildKit (`--cache-from`, או `cache-to: type=gha` ב-GitHub Actions), כדי שה-cache יישמר בין runners."
+
+  docker-img-002:
+    prompt: איך אפשר להקטין Docker image? (סמנו את כל הנכונות.)
+    options:
+      - "בנייה בכמה שלבים (multi-stage), ולהעתיק לשלב האחרון רק את התוצר"
+      - "base image קטן: slim, alpine או distroless"
+      - "לנקות את ה-cache של מנהל החבילות באותה הוראת RUN שמתקינה"
+      - "למחוק קבצים בהוראת RUN מאוחרת יותר מזו שיצרה אותם"
+    explanation: |
+      שכבות רק מצטברות. מחיקת קובץ בשכבה מאוחרת מסתירה אותו, אבל **לא מקטינה את ה-image**.
+      מנקים באותו `RUN`, למשל `apt-get install … && rm -rf /var/lib/apt/lists/*`.
+      `docker history` ו-`dive` מראים אילו שכבות גדולות.
+
+  docker-img-003:
+    prompt: בנו image מה-Dockerfile שבתיקייה הנוכחית, ותנו לו את השם והתגית `myapp:1.4.0`.
+    explanation: "`-t name:tag`, והארגומנט האחרון הוא תיקיית הבנייה (`.`). `-f` בוחר Dockerfile אחר. לא כדאי לסמוך על `latest` בשום דבר שפורסים."
+
+  docker-img-004:
+    prompt: הציגו את ה-Docker images שנמצאים במחשב הזה.
+    explanation: "מוצג לכל image השם, התגית, ה-ID והגודל. כשהדיסק מתמלא, `docker image prune` מוחק images שלא בשימוש."
+
+  docker-img-005:
+    prompt: הורידו את ה-image `nginx:1.27` בלי להריץ אותו.
+    explanation: "בלי תגית Docker מוריד את `latest`, שאולי היא לא הגרסה שאתם רוצים. הורדה מראש שימושית לפני הדגמה, או כדי \"לחמם\" שרת."
+
+  docker-df-001:
+    prompt: מה ההבדל בין `CMD` ל-`ENTRYPOINT`?
+    keyPoints:
+      - "ENTRYPOINT קובע את התוכנה שתמיד רצה"
+      - "CMD נותן ארגומנטים (או פקודה) כברירת מחדל, וקל להחליף אותם עם `docker run image <args>`"
+      - "ביחד: ENTRYPOINT הוא התוכנה, ו-CMD הם הארגומנטים שלה כברירת מחדל"
+      - "עדיף לכתוב בצורת exec (מערך JSON), כדי שהתהליך יהיה PID 1 ויקבל סיגנלים"
+    modelAnswer: |
+      **ENTRYPOINT** הוא התוכנה שהקונטיינר תמיד מריץ.
+      **CMD** הוא ברירת המחדל: הפקודה עצמה, או, אם יש ENTRYPOINT, הארגומנטים שלו.
+      כל מה שכותבים אחרי שם ה-image ב-`docker run` מחליף את CMD. כדי להחליף את ENTRYPOINT צריך `--entrypoint`.
+      דפוס נפוץ: `ENTRYPOINT ["python", "app.py"]` עם `CMD ["--port", "8080"]`.
+      כותבים בצורת JSON (exec), לא בצורת shell. כך התוכנה רצה כ-PID 1 ובאמת מקבלת SIGTERM ב-`docker stop`, במקום ש-`/bin/sh` שעוטף אותה יבלע את הסיגנל.
+    explanation: ב-Kubernetes, `command` מחליף את ENTRYPOINT, ו-`args` מחליף את CMD.
+
+  docker-df-002:
+    prompt: מה ההבדל בין `COPY` ל-`ADD`?
+    options:
+      - "ADD יודע גם להוריד מכתובות URL, ופותח אוטומטית קובצי tar מקומיים; COPY רק מעתיק. משתמשים ב-COPY, אלא אם צריך את היכולות האלה"
+      - "COPY כבר לא בשימוש"
+      - "ADD עובד רק עם תיקיות"
+      - "אין הבדל"
+    explanation: COPY ברור וצפוי. ה"קסמים" של ADD, כמו פתיחה שקטה של קובץ tar, מפתיעים אנשים.
+
+  docker-df-003:
+    prompt: אילו כללים טובים של Dockerfile הייתם מחפשים ב-code review?
+    keyPoints:
+      - "base image קטן ונעול לגרסה (גרסה מדויקת או digest, לא latest); slim או distroless"
+      - "בנייה בכמה שלבים: כלי הבנייה לא נכנסים ל-image הסופי"
+      - "סדר שכבות שמתאים ל-cache; איחוד הוראות RUN וניקוי cache"
+      - "הרצה כמשתמש שאינו root (USER)"
+      - "בלי secrets ב-image (ENV, COPY, ARG); שימוש ב-.dockerignore"
+      - "CMD או ENTRYPOINT בצורת exec, HEALTHCHECK, ותהליך ראשי אחד בכל קונטיינר"
+    modelAnswer: |
+      כדאי לבדוק:
+      - base image קטן, נעול לגרסה מדויקת, לא `latest`.
+      - בנייה בכמה שלבים, כדי שקומפיילרים ותלויות פיתוח לא ייכנסו ל-image הסופי.
+      - התקנת תלויות לפני העתקת הקוד (בשביל ה-cache), איחוד של הוראות `RUN`, וניקוי cache באותה שכבה.
+      - `.dockerignore`.
+      - `USER` שאינו root.
+      - **אין secrets** שנכנסים דרך `ENV`, `ARG` או קבצים שמועתקים. כל מי שמושך את ה-image יכול לקרוא אותם מהשכבות.
+      - `CMD` בצורת exec, תהליך ראשי אחד, ו-`HEALTHCHECK` (או probes ב-Kubernetes).
+      ובנוסף, סורק כמו Trivy ב-CI.
+    explanation: "`hadolint` בודק Dockerfiles אוטומטית ותופס את רוב הדברים האלה."
+
+  docker-df-004:
+    prompt: למה `ARG API_KEY` ואחריו `RUN ./configure --key $API_KEY` היא דרך גרועה להשתמש ב-secret בזמן הבנייה?
+    options:
+      - "ערכים של build args נשמרים בהיסטוריה של ה-image, כך שכל מי שיש לו את ה-image יכול לקרוא את ה-secret"
+      - "ערכי ARG לא זמינים בהוראות RUN"
+      - "זה מגדיל את ה-image"
+      - "זה עובד רק עם Alpine"
+    explanation: '`docker history` חושף ערכי ARG. במקום זה משתמשים ב-secrets של BuildKit: `RUN --mount=type=secret,id=api_key …` עם `docker build --secret id=api_key,src=…`. הם אף פעם לא נכתבים לשכבה.'
+
+  docker-df-005:
+    prompt: סדרו את השורות של Dockerfile לאפליקציית Node.js, כך שה-cache יעבוד הכי טוב.
+    steps:
+      - "FROM node:22-slim"
+      - "WORKDIR /app"
+      - "COPY package.json package-lock.json ./"
+      - "RUN npm ci --omit=dev"
+      - "COPY . ."
+      - 'CMD ["node", "server.js"]'
+    explanation: התלויות משתנות לעתים רחוקות, והקוד משתנה כל הזמן. אם מעתיקים קודם רק את קובץ ה-lock, `npm ci` נשאר ב-cache עד שהתלויות באמת משתנות.
+
+  docker-df-006:
+    prompt: מה עושה `EXPOSE 8080` ב-Dockerfile?
+    options:
+      - "מתעד שהאפליקציה מאזינה ב-8080; הוא לא פותח את הפורט. עדיין צריך `-p` כדי להגיע אליה מהשרת"
+      - "פותח את פורט 8080 ב-firewall של השרת"
+      - "גורם לאפליקציה להאזין ב-8080"
+      - "מפרסם את פורט 8080 לאינטרנט"
+    explanation: "האפליקציה עצמה מחליטה באיזה פורט להאזין. `EXPOSE` הוא מידע שכלים יכולים לקרוא (`docker run -P` מפרסם את כל הפורטים האלה לפורטים אקראיים בשרת)."
+
+  docker-df-007:
+    prompt: בשביל מה הקובץ `.dockerignore`?
+    options:
+      - "הוא מפרט קבצים ותיקיות שלא נשלחים לבנייה, כמו `.git`, `node_modules` ו-`.env`"
+      - "הוא מפרט קונטיינרים ש-Docker לא צריך להפעיל"
+      - "הוא מפרט images שאסור לדחוף"
+      - "הוא מסתיר את ה-Dockerfile מ-Git"
+    explanation: "פחות קבצים בבנייה = בנייה מהירה יותר, cache יציב יותר, ו-secrets כמו `.env` לא נכנסים ל-image בטעות דרך `COPY . .`."
+
+  docker-rt-001:
+    prompt: הריצו את `nginx:1.27` ברקע, עם השם `web`, ופרסמו את פורט 80 של הקונטיינר בפורט 8080 של השרת.
+    explanation: "`-p HOST:CONTAINER`, כלומר קודם הפורט בשרת ואחר כך בקונטיינר. להפוך את הסדר זו הטעות הקלאסית. `-d` מריץ ברקע, ו-`--name` נותן שם קבוע במקום שם אקראי."
+
+  docker-rt-002:
+    prompt: פתחו shell אינטראקטיבי בתוך הקונטיינר `web`, שכבר רץ.
+    explanation: '`exec` מריץ תהליך חדש בתוך קונטיינר קיים, ו-`-it` נותן טרמינל אינטראקטיבי. ב-images קטנים (slim, distroless) אולי אין shell בכלל. אז משתמשים ב-`docker debug`, או בקונטיינר דיבוג זמני (`kubectl debug` ב-Kubernetes).'
+
+  docker-rt-003:
+    prompt: עקבו אחרי הלוגים של הקונטיינר `web`, החל מ-50 השורות האחרונות.
+    explanation: Docker אוסף את מה שהקונטיינר כותב ל-stdout ול-stderr. לכן אפליקציות בקונטיינרים צריכות לכתוב לוגים ל-stdout, לא לקבצים.
+
+  docker-rt-004:
+    prompt: קונטיינר נסגר מיד אחרי `docker run`. איך מגלים למה?
+    keyPoints:
+      - "docker ps -a כדי לראות אותו ואת קוד היציאה שלו"
+      - "docker logs <container> כדי לקרוא את הפלט או השגיאה"
+      - "להבין את קוד היציאה: 0 = התהליך הראשי פשוט הסתיים (למשל אין תהליך בחזית), 1 = שגיאה באפליקציה, 137 = SIGKILL או OOM, 127 = הפקודה לא נמצאה"
+      - "docker inspect (State, OOMKilled, הפקודה וה-entrypoint, משתני סביבה)"
+      - "להריץ אינטראקטיבית עם entrypoint אחר (docker run -it --entrypoint sh image) כדי לחקור"
+    modelAnswer: |
+      קונטיינר חי רק כל עוד התהליך הראשי שלו חי.
+      1. `docker ps -a` כדי למצוא אותו ואת קוד היציאה.
+      2. `docker logs <id>`, שבדרך כלל מראה את השגיאה.
+      קוד היציאה עוזר:
+      - **0**: התהליך הראשי פשוט הסתיים. הרבה פעמים הפקודה לא נשארת בחזית (למשל שירות שהופעל ברקע).
+      - **1**: שגיאה באפליקציה, כמו הגדרה חסרה או משתנה סביבה שגוי.
+      - **127**: הפקודה לא נמצאה.
+      - **137**: התהליך נהרג עם SIGKILL, הרבה פעמים בגלל חוסר זיכרון (OOM).
+      `docker inspect` מראה את `State.OOMKilled`, את הפקודה שרצה ואת משתני הסביבה. כדי לחקור מבפנים, מריצים עם `--entrypoint sh -it` ומפעילים את האפליקציה ידנית.
+    explanation: "קוד יציאה 128+N אומר שהתהליך נהרג מסיגנל N: ‏137 = 128+9 (SIGKILL), ‏143 = 128+15 (SIGTERM)."
+
+  docker-rt-005:
+    prompt: הסטטוס של קונטיינר הוא `Exited (137)`. מה הסיבה הסבירה?
+    options: ["הוא נהרג עם SIGKILL, בדרך כלל כי עבר את מגבלת הזיכרון (OOM)", "האפליקציה החזירה שגיאה רגילה", "ה-image לא קיים", "פורט 137 היה תפוס"]
+    explanation: "‏137 = 128 + 9 (SIGKILL). בודקים עם `docker inspect --format '{{.State.OOMKilled}}'`, או ב-Kubernetes את הסיבה `OOMKilled` ב-`kubectl describe pod`."
+
+  docker-rt-006:
+    prompt: הציגו את הקונטיינרים שרצים עכשיו.
+    explanation: "מוצגים ה-ID, ה-image, הפקודה, הסטטוס, הפורטים והשם. קונטיינרים שנעצרו לא מוצגים; כדי לראות אותם מוסיפים `-a`."
+
+  docker-rt-007:
+    prompt: הציגו את כל הקונטיינרים, כולל אלה שנעצרו.
+    explanation: "שימושי כשקונטיינר נסגר מיד: הוא יופיע כאן עם `Exited (code)`, ואפשר לקרוא את הלוגים שלו עם `docker logs`."
+
+  docker-rt-008:
+    prompt: עצרו את הקונטיינר `web` בצורה מסודרת.
+    explanation: "`docker stop` שולח SIGTERM, מחכה 10 שניות, ואז שולח SIGKILL. `docker kill` שולח SIGKILL מיד, כך שלאפליקציה אין הזדמנות לסיים בצורה מסודרת."
+
+  docker-rt-009:
+    prompt: מחקו את הקונטיינר `web`, שכבר נעצר.
+    explanation: "`rm` מוחק קונטיינרים, ו-`rmi` מוחק images. `-f` גם עוצר קונטיינר שרץ לפני המחיקה. `docker run --rm` מוחק את הקונטיינר אוטומטית כשהוא מסתיים."
+
+  docker-rt-010:
+    prompt: הריצו את `postgres:16` ברקע, עם משתנה הסביבה `POSTGRES_PASSWORD` שערכו `secret`.
+    explanation: |
+      `-e NAME=value` מגדיר משתנה סביבה, ו-`--env-file .env` טוען הרבה משתנים.
+      האפשרויות באות **לפני** שם ה-image. כל מה שאחריו עובר לפקודה של הקונטיינר.
+      משתני סביבה גלויים ב-`docker inspect`, ולכן secrets אמיתיים שומרים במנהל secrets.
+
+  docker-sn-001:
+    prompt: איך שומרים מידע לאורך זמן ב-Docker? השוו בין volumes ל-bind mounts.
+    keyPoints:
+      - "השכבה שהקונטיינר כותב אליה נמחקת כשהקונטיינר נמחק"
+      - "volumes: מנוהלים על ידי Docker (/var/lib/docker/volumes), קל להעביר אותם, וזו הדרך המומלצת למידע של אפליקציות כמו מסדי נתונים"
+      - "bind mounts: מחברים נתיב מסוים בשרת לתוך הקונטיינר; מצוין לפיתוח (קוד חי) ולקובצי הגדרות; תלויים במבנה התיקיות ובהרשאות של השרת"
+      - "tmpfs למידע זמני בזיכרון, שלא נשמר"
+    modelAnswer: |
+      כל מה שנכתב בתוך מערכת הקבצים של הקונטיינר נעלם כשמוחקים אותו. לכן מידע שצריך להישמר מחברים מבחוץ.
+      **volume** עם שם, למשל `-v pgdata:/var/lib/postgresql/data`, נוצר ומנוהל על ידי Docker. זו הבחירה הרגילה למסדי נתונים, וקל לגבות ולהעביר אותו.
+      **bind mount**, למשל `-v /home/me/src:/app`, מחבר נתיב מדויק מהשרת לתוך הקונטיינר. מצוין בפיתוח, כדי שהקוד יתעדכן בלי לבנות מחדש, או כדי להכניס קובצי הגדרות. אבל הוא תלוי במבנה התיקיות ובהרשאות של השרת.
+      יש גם **tmpfs** למידע זמני שצריך לחיות רק בזיכרון.
+    explanation: "ב-Kubernetes אותו רעיון הופך ל-PersistentVolume ו-PVC (כמו volumes), hostPath (כמו bind mount, עדיף להימנע) ו-emptyDir."
+
+  docker-sn-002:
+    prompt: שני קונטיינרים נמצאים באותה רשת bridge **שיצרתם בעצמכם**. איך `api` צריך לפנות ל-`db`?
+    options:
+      - "לפי שם הקונטיינר, למשל `db:5432`: שרת ה-DNS הפנימי של Docker מתרגם אותו"
+      - "לפי כתובת ה-IP הציבורית של השרת"
+      - "דרך localhost:5432"
+      - "הם לא יכולים לדבר, אלא אם שניהם מפרסמים פורטים עם -p"
+    explanation: |
+      ברשתות שיצרתם (וגם ב-Compose) יש DNS אוטומטי לפי שם הקונטיינר או השירות.
+      `localhost` בתוך קונטיינר הוא הקונטיינר עצמו.
+      צריך לפרסם פורטים (`-p`) רק כדי להגיע **מחוץ** ל-Docker.
+
+  docker-sn-003:
+    prompt: מה עושה `--network host`?
+    options:
+      - "הקונטיינר חולק את הרשת של השרת: אין בידוד ואין מיפוי פורטים; הוא מאזין ישירות בפורטים של השרת"
+      - "נותן לקונטיינר כתובת IP ציבורית"
+      - "מחבר את הקונטיינר לכל הרשתות של Docker"
+      - "מכבה את הרשת"
+    explanation: "רשת host מהירה ופשוטה, אבל מוותרת על הבידוד, ועכשיו התנגשויות פורטים הן הבעיה שלכם. `--network none` מכבה רשת. ברשת bridge הרגילה צריך `-p` כדי לפרסם פורטים."
+
+  docker-sn-004:
+    prompt: צרו Docker volume עם השם `pgdata`.
+    explanation: "אחר כך מחברים אותו עם `-v pgdata:/var/lib/postgresql/data`. גם `docker run` יוצר את ה-volume אוטומטית אם הוא לא קיים. `docker volume ls` מציג את ה-volumes."
+
+  docker-compose-001:
+    prompt: בשביל מה Docker Compose, ומה `depends_on` מבטיח בפועל?
+    keyPoints:
+      - "Compose מגדיר ומריץ אפליקציה של כמה קונטיינרים מקובץ YAML אחד (services, networks, volumes); מצוין לפיתוח מקומי ול-CI"
+      - "לשירותים יש רשת משותפת, והם פונים זה לזה לפי שם השירות"
+      - "depends_on קובע רק את **סדר ההפעלה**, לא שהשירות מוכן, אלא אם משלבים אותו עם healthcheck (condition: service_healthy)"
+      - "האפליקציה עדיין צריכה לנסות להתחבר שוב אם נכשלה"
+    modelAnswer: |
+      Compose מתאר אפליקציה של כמה קונטיינרים בקובץ אחד, `compose.yaml`: השירותים, ה-images או הבנייה שלהם, פורטים, משתני סביבה, volumes, ורשת משותפת שבה הם מוצאים זה את זה לפי שם השירות.
+      `docker compose up` מריץ את הכול. זה מצוין לפיתוח מקומי ולבדיקות אינטגרציה ב-CI.
+      `depends_on` קובע רק סדר הפעלה: הוא מחכה שקונטיינר ה-db יתחיל, לא ש-Postgres יהיה מוכן לקבל חיבורים.
+      כדי לחכות שהוא באמת מוכן, נותנים ל-db `healthcheck` ומשתמשים ב-`condition: service_healthy`.
+      והאפליקציה צריכה בכל מקרה לנסות להתחבר שוב, כי ב-production דברים מופעלים מחדש.
+    explanation: Compose הוא לא orchestrator. לכמה שרתים, ריפוי עצמי ועדכונים הדרגתיים משתמשים ב-Kubernetes (או ECS).
+
+  docker-compose-002:
+    prompt: הפעילו ברקע את כל השירותים שמוגדרים ב-`compose.yaml`, ובנו מחדש את ה-images לפני כן.
+    explanation: '`docker compose` (גרסה 2, plugin של Docker) החליף את `docker-compose` (גרסה 1, ב-Python). `down -v` מוחק גם את ה-volumes, וזה הרסני.'
+
+  docker-compose-003:
+    prompt: עצרו ומחקו את כל הקונטיינרים והרשתות של ה-Compose, אבל השאירו את ה-volumes (המידע).
+    explanation: "`down` מוחק קונטיינרים ורשתות. `down -v` מוחק גם את ה-volumes, ואז מסד הנתונים נמחק. `stop` רק עוצר את הקונטיינרים ומשאיר אותם."
+
+  docker-reg-001:
+    prompt: למה לפרוס `myapp:latest` ל-production זה רעיון רע? איך כדאי לתייג images?
+    keyPoints:
+      - "latest הוא סתם תגית ברירת מחדל, לא \"הכי חדש\"; אפשר לשנות אותה, והיא מצביעה על מה שנדחף אחרון"
+      - "אי אפשר לשחזר או לעקוב: לא יודעים מה רץ, ואי אפשר לחזור לגרסה קודמת בצורה אמינה"
+      - "בעיות cache ו-imagePullPolicy: שרתים שונים יכולים להריץ גרסאות שונות"
+      - "משתמשים בתגיות קבועות: מספר גרסה ו/או SHA של ה-commit; הכי טוב לפרוס לפי digest"
+    modelAnswer: |
+      `latest` הוא סתם שם של תגית. אפשר לשנות אותו, והוא אומר רק "מה שנדחף אחרון בלי תגית".
+      אם production מריץ `latest`:
+      - אי אפשר לדעת איזה קוד רץ.
+      - שני שרתים יכולים למשוך images שונים.
+      - חזרה לגרסה קודמת דורשת לדחוף שוב image ישן תחת אותו שם.
+      במקום זה, נותנים לכל בנייה תגית קבועה שאפשר לעקוב אחריה: ה-SHA של ה-commit, ומספר גרסה בשחרורים (`myapp:1.4.0`, `myapp:sha-3f2c9a1`).
+      פורסים את התגית המדויקת הזאת, או אפילו את ה-digest, `myapp@sha256:...`, שלא יכול להשתנות לעולם. ואז חזרה לגרסה קודמת היא פשוט הפניה לתגית הקודמת.
+    explanation: בפרויקט MyBroker, ה-workflow של השחרור דוחף images ל-GHCR עם תגית של הגרסה ושל ה-SHA, ו-Argo CD פורס תגית מסוימת.
+
+  docker-reg-002:
+    prompt: תנו ל-image המקומי `myapp:1.4.0` שם נוסף, `ghcr.io/acme/myapp:1.4.0`, כדי שאפשר יהיה לדחוף אותו ל-GHCR.
+    explanation: |
+      `docker tag SOURCE TARGET`, כלומר קודם המקור ואחר כך השם החדש.
+      כתובת ה-registry היא חלק משם ה-image. לכן כדי לדחוף למקום מסוים, קודם נותנים ל-image שם שמתחיל ב-registry הזה. תגית היא רק עוד שם; שום מידע לא מועתק.
+
+  docker-reg-003:
+    prompt: העלו את ה-image `ghcr.io/acme/myapp:1.4.0` ל-registry שלו.
+    explanation: "קודם צריך להתחבר: `docker login ghcr.io`. רק שכבות שאין ב-registry עולות."

@@ -1,0 +1,231 @@
+topic: gitops
+questions:
+  gitops-prin-001:
+    prompt: מה זה GitOps? מהם העקרונות שלו?
+    keyPoints:
+      - "המצב הרצוי של המערכת כתוב ב-Git, בקבצי הגדרה דקלרטיביים"
+      - "Git הוא מקור האמת היחיד: כל שינוי עובר דרך commit או pull request, ולכן יש בדיקה ותיעוד"
+      - "כלי שרץ בתוך ה-cluster מושך את ההגדרות מ-Git ודואג כל הזמן שהמצב בפועל יתאים להן"
+      - "שינוי ידני מתוקן אוטומטית, וחזרה לגרסה קודמת היא git revert"
+    modelAnswer: |
+      ב-GitOps כל ההגדרות של הסביבות שמורות ב-Git: קבצי Kubernetes או קבצי values של Helm. הדרך היחידה לשנות משהו היא דרך Git.
+      כל שינוי הוא commit או pull request. לכן מישהו בודק אותו, ונשאר תיעוד מלא של מי שינה מה ומתי.
+      כלי שרץ בתוך ה-cluster, כמו Argo CD או Flux, מושך את ההגדרות מ-Git כל הזמן ומשווה. אם יש הבדל, בגלל commit חדש או בגלל שמישהו שינה משהו ידנית, הוא מחיל את מה שכתוב ב-Git.
+      בפועל: פריסה = merge של PR. חזרה לגרסה קודמת = revert. שינוי ידני = מתוקן לבד.
+    explanation: "ארבעת העקרונות של OpenGitOps: הגדרה דקלרטיבית, שמורה עם גרסאות, נמשכת אוטומטית, ומסונכרנת כל הזמן."
+
+  gitops-prin-002:
+    prompt: מה יתרון האבטחה החשוב של GitOps שבו ה-cluster מושך את השינויים, לעומת CI שדוחף אותם ל-cluster?
+    options:
+      - "מערכת ה-CI לא צריכה הרשאות גישה ל-cluster; הכלי שבתוך ה-cluster מושך את השינויים בעצמו"
+      - "כל הסודות מוצפנים אוטומטית"
+      - "לא צריך Git"
+      - "לא צריך יותר RBAC"
+    explanation: פחות סודות מחוץ ל-cluster = פחות דרכים לפרוץ. גם אם מישהו פרץ ל-CI, הוא יכול רק לדחוף ל-Git, ושם אפשר לראות את השינוי ולבטל אותו.
+
+  gitops-prin-003:
+    prompt: ב-GitOps, איך חוזרים מגרסה גרועה לגרסה הקודמת?
+    options: ["מבטלים את ה-commit ב-Git (revert), וכלי ה-GitOps מחזיר את ה-cluster בהתאם", "מוחקים את ה-Pods עם kubectl delete", "מתחברים ל-nodes ב-SSH ומפעילים מחדש את Docker", "מוחקים את ה-repository"]
+    explanation: "Git הוא מקור האמת, ולכן חזרה אחורה היא פשוט עוד commit (`git revert`). יש לה בדיקה ותיעוד, וה-cluster מתעדכן לבד."
+
+  gitops-prin-004:
+    prompt: אילו מאלה הם כלי GitOps? (סמנו את כל הנכונות.)
+    options: ["Argo CD", "Flux", "Jenkins", "Prometheus"]
+    explanation: "Argo CD ו-Flux רצים בתוך ה-cluster ומסנכרנים אותו מ-Git. Jenkins הוא שרת CI שדוחף שינויים, ו-Prometheus הוא כלי ניטור."
+
+  gitops-prin-005:
+    prompt: איך CI ו-GitOps מתחלקים בעבודה ב-pipeline טיפוסי?
+    keyPoints:
+      - "ה-CI בונה, בודק וסורק את הקוד, ואז דוחף image ל-registry"
+      - "ה-CI (או בוט) מעדכן את גרסת ה-image בקבצי ההגדרות ב-Git, ב-commit או ב-PR"
+      - "הכלי שבתוך ה-cluster רואה את השינוי ב-Git ופורס אותו"
+      - "ה-CI אף פעם לא מדבר ישירות עם ה-cluster; מעבר לפרודקשן הוא PR"
+    modelAnswer: |
+      ה-CI אחראי על כל מה שקורה עד שיש image מוכן: בנייה, בדיקות, סריקות, ודחיפת ה-image ל-registry עם תגית קבועה.
+      אחר כך ה-CI משנה את Git, לא את ה-cluster. הוא כותב את התגית החדשה בקבצי ההגדרות או בקובץ ה-values, ולפרודקשן בדרך כלל דרך pull request.
+      הכלי של GitOps, Argo CD או Flux, רואה את ה-commit ומעדכן את ה-cluster.
+      היתרונות: ל-CI לא צריך הרשאות ל-cluster. כל פריסה היא commit שאפשר לבדוק ולבטל. ומעבר לפרודקשן הוא פשוט אישור של PR.
+    explanation: "ב-MyBroker, הקובץ release.yml דוחף image ל-GHCR ומעדכן את התגית בקובץ values-staging.yaml. תגית v* פותחת PR למעבר לפרודקשן."
+
+  gitops-argo-001:
+    prompt: מה המשמעות של Synced/OutOfSync ושל Healthy/Degraded ב-Argo CD? ומה עושים auto-sync, prune ו-self-heal?
+    keyPoints:
+      - "סטטוס הסנכרון משווה את מה שרץ ב-cluster למה שכתוב ב-Git. OutOfSync = יש הבדל"
+      - "סטטוס הבריאות אומר אם המשאבים באמת עובדים (ה-Deployment זמין, ה-Pods מוכנים). Degraded = יש בעיה"
+      - "auto-sync מחיל שינויים חדשים מ-Git אוטומטית"
+      - "prune מוחק משאבים שהוסרו מ-Git; self-heal מחזיר שינויים ידניים שנעשו ב-cluster"
+    modelAnswer: |
+      Argo CD מראה שני דברים נפרדים.
+      **סנכרון (Synced/OutOfSync):** האם מה שרץ ב-cluster זהה למה שכתוב ב-Git. OutOfSync אומר שמישהו שינה משהו ב-cluster, או שיש ב-Git commit שעוד לא הוחל.
+      **בריאות (Healthy/Degraded):** האם האפליקציה באמת עובדת. Deployment שה-Pods שלו לא מוכנים יהיה Degraded, גם אם הוא מסונכרן לגמרי.
+      **auto-sync:** מחיל commits חדשים בלי שמישהו ילחץ על Sync.
+      **prune:** מוחק מה-cluster משאבים שמחקתם מ-Git. הוא כבוי כברירת מחדל, ליתר ביטחון.
+      **self-heal:** אם מישהו שינה משהו ידנית, למשל עם `kubectl scale`, הוא מחזיר את המצב למה שכתוב ב-Git.
+      מצב של "Synced אבל Degraded" אומר בדרך כלל שהבעיה נמצאת ב-Git עצמו: image שבור או הגדרה שגויה.
+    explanation: "app-of-apps: אפליקציה ראשית אחת שבתוכה מוגדרות האפליקציות האחרות. כך יצרתי ב-MyBroker את staging ואת prod."
+
+  gitops-argo-002:
+    prompt: ב-Argo CD מופעל self-heal, ומישהו מריץ `kubectl scale deployment api --replicas=10`. מה יקרה?
+    options:
+      - "Argo CD יזהה את השינוי ויחזיר את מספר העותקים למה שכתוב ב-Git (אלא אם HPA מנהל את מספר העותקים והשדה הזה מוחרג)"
+      - "השינוי יישאר לתמיד"
+      - "Argo CD ימחק את ה-Deployment"
+      - "kubectl יסרב להריץ את הפקודה"
+    explanation: "כשיש HPA, בדרך כלל לא כותבים את `replicas` בקובץ, או מוסיפים `ignoreDifferences`, כדי ש-Argo CD וה-HPA לא יריבו."
+
+  gitops-argo-003:
+    prompt: איך שומרים סודות ב-repository של GitOps?
+    options:
+      - "אף פעם לא שומרים Secret גלוי; משתמשים ב-Sealed Secrets או SOPS (מוצפן ב-Git), או ב-External Secrets Operator (הפניה לכספת סודות)"
+      - "מקודדים ב-base64, זה מספיק"
+      - "שומרים בטקסט גלוי ב-repo פרטי"
+      - "כותבים אותם ב-values.yaml של ה-chart"
+    explanation: "base64 הוא לא הצפנה, כל אחד יכול לפענח אותו. גם repo פרטי מועתק ודולף. או שמצפינים את הסודות, או ששומרים ב-Git רק הפניה לכספת."
+
+  gitops-argo-004:
+    prompt: מה זה Application ב-Argo CD?
+    options:
+      - "אובייקט שאומר: קח את התיקייה הזו מה-repo הזה ותדאג שהיא תהיה מסונכרנת ל-cluster ול-namespace האלה"
+      - "Docker image ש-Argo CD בנה"
+      - "Deployment של Kubernetes עם labels נוספים"
+      - "עבודת CI"
+    explanation: "ל-Application יש מקור (repo, תיקייה או Helm chart, וגרסה), יעד (cluster ו-namespace), ומדיניות סנכרון כמו auto-sync, prune ו-self-heal."
+
+  gitops-argo-005:
+    prompt: מה זו השיטה "app of apps" ב-Argo CD?
+    options:
+      - "אפליקציה ראשית אחת, שבתיקייה שלה ב-Git יש הגדרות של אפליקציות אחרות. היא יוצרת את כל השאר"
+      - "הרצה של כמה שרתי Argo CD"
+      - "כל השירותים בתוך Deployment אחד"
+      - "אפליקציה בלי מקור"
+    explanation: "ההקמה הופכת לצעד אחד: יוצרים את האפליקציה הראשית, והיא יוצרת את staging, את prod ואת אפליקציות הפלטפורמה. ApplicationSet היא חלופה דינמית יותר."
+
+  gitops-argo-006:
+    prompt: Argo CD מראה שאפליקציה במצב OutOfSync, אבל אף אחד לא שינה את Git. מה יכול לגרום לזה, ומה עושים?
+    keyPoints:
+      - "מישהו שינה את המשאב ידנית (kubectl edit/scale) ו-self-heal כבוי"
+      - "בקר אחר משנה שדות (למשל HPA משנה את מספר העותקים, או webhook מוסיף ערכים)"
+      - "מסתכלים על ה-diff ב-Argo CD כדי לראות בדיוק אילו שדות שונים"
+      - "מתקנים: מסנכרנים חזרה ל-Git, או מכניסים את השינוי ל-Git, או מוסיפים ignoreDifferences לשדות שמישהו אחר מנהל"
+    modelAnswer: |
+      OutOfSync אומר רק שמה שרץ שונה ממה שכתוב ב-Git. אם Git לא השתנה, אז ה-cluster השתנה.
+      בדרך כלל מישהו הריץ `kubectl edit` או `kubectl scale`, ו-self-heal כבוי. לפעמים זה בקר אחר: HPA שמשנה את `replicas`, או webhook שמוסיף שדות.
+      קודם פותחים את ה-diff של האפליקציה ב-Argo CD ורואים בדיוק מה שונה.
+      אם זה שינוי ידני: או מסנכרנים חזרה ל-Git, או, אם השינוי היה נכון, מכניסים אותו ל-Git כמו שצריך.
+      אם השדה שייך לבקר אחר, כמו ה-HPA: מוציאים אותו מהקובץ או מוסיפים `ignoreDifferences`, כדי שלא יריבו.
+    explanation: "הפעלה של self-heal מעלימה שינויים ידניים אוטומטית, וגם מרגילה את הצוות לא לשנות דברים ביד."
+
+  gitops-argo-007:
+    prompt: עם כלי שורת הפקודה של Argo CD, סנכרנו עכשיו את האפליקציה `mybroker-prod`.
+    explanation: "`argocd app get` מציג מצב ומשאבים, `argocd app diff` מראה מה ישתנה, ו-`argocd app history` / `rollback` עובדים עם סנכרונים קודמים."
+
+  gitops-argo-008:
+    prompt: על מה שולט AppProject ב-Argo CD?
+    options:
+      - "מאילו repos אפליקציה יכולה למשוך, לאילו clusters ו-namespaces היא יכולה לפרוס, ואילו סוגי משאבים מותרים"
+      - "על מגבלות ה-CPU של שרת Argo CD"
+      - "על כללי השמות של branches ב-Git"
+      - "על הסיסמאות ל-registry של Docker"
+    explanation: "Project הוא גדר בטיחות. ב-MyBroker ה-project מרשה רק את ה-repo של הפרויקט כמקור, ורק את ה-namespaces שמתחילים ב-mybroker כיעד, בלי משאבים ברמת ה-cluster."
+
+  gitops-argo-009:
+    prompt: למה Argo CD ו-HPA יכולים "לריב" על Deployment, ומה הפתרון המקובל?
+    options:
+      - "בקובץ כתוב מספר עותקים, ה-HPA משנה אותו, ו-self-heal מחזיר אותו. מוציאים את replicas מהקובץ או מחריגים את השדה"
+      - "ה-HPA מוחק את ה-Application של Argo CD"
+      - "Argo CD מכבה את metrics-server"
+      - "הם אף פעם לא מתנגשים"
+    explanation: "כשמישהו אחר מנהל שדה, Git לא צריך לקבוע אותו גם. לא כותבים את `replicas` (ה-HPA קובע אותו), או מוסיפים `ignoreDifferences` על `/spec/replicas`."
+
+  gitops-prin-006:
+    prompt: ב-GitOps, מה המשמעות של "Git הוא מקור האמת"?
+    options:
+      - "המצב הרצוי של המערכת הוא מה שכתוב ב-Git; כדי לשנות את ה-cluster משנים את Git, וכלי דואג שה-cluster יתאים"
+      - "כל הקוד חייב להיות ב-repo אחד"
+      - "Git שומר גיבויים של המידע ב-cluster"
+      - "רק מנהלי Git יכולים לפרוס"
+    explanation: "אם ה-cluster ו-Git לא מסכימים, Git מנצח. כך מקבלים לכל שינוי היסטוריה, review וחזרה לאחור, בדיוק כמו בקוד."
+
+  gitops-prin-007:
+    prompt: מה ההבדל בין פריסה בשיטת push לפריסה בשיטת pull?
+    options:
+      - "push: ה-pipeline של ה-CI מתחבר ל-cluster ומחיל שינויים. pull: סוכן בתוך ה-cluster עוקב אחרי Git ומחיל את השינויים בעצמו"
+      - "push משתמש ב-git push; pull משתמש ב-git pull על מחשב נייד"
+      - "push ל-Docker images; pull ל-Helm charts"
+      - "אין הבדל"
+    explanation: "כלי GitOps כמו Argo CD ו-Flux עובדים בשיטת pull. לא צריך להגיע ל-cluster מה-CI, וה-CI לא צריך פרטי גישה ל-cluster."
+
+  gitops-prin-008:
+    prompt: ב-GitOps, איך פורסים גרסה חדשה של האפליקציה?
+    options:
+      - "משנים את תגית ה-image ב-repo של Git (ב-commit או ב-pull request); ה-controller של GitOps שם לב ומסנכרן את ה-cluster"
+      - "מריצים `kubectl set image` על ה-cluster"
+      - "מתחברים ב-SSH ל-node ומושכים את ה-image"
+      - "מפעילים מחדש את השרת של Argo CD"
+    explanation: "הרבה פעמים ה-CI עושה את ה-commit הזה אוטומטית אחרי שהוא בונה את ה-image, לפחות ל-staging. ל-production זה בדרך כלל pull request שמישהו מאשר."
+
+  gitops-prin-009:
+    prompt: מה זה "drift" ב-GitOps, ואיך מטפלים בו?
+    options:
+      - "ה-cluster החי כבר לא תואם ל-Git (למשל עריכה ידנית עם kubectl); ה-controller מציג אותו כ-OutOfSync, ועם self-heal מחזיר אותו למה שב-Git"
+      - "commits ב-Git שעוד לא נדחפו"
+      - "pods שעוברים בין nodes"
+      - "תגית ה-image שמתיישנת"
+    explanation: "self-heal הופך את Git לדרך היחידה לשנות דברים. בזמן תקלה, אם באמת צריך שינוי ידני, קודם עוצרים את ה-auto-sync, ואחר כך מכניסים את התיקון ל-Git."
+
+  gitops-prin-010:
+    prompt: הרבה צוותים שומרים את קובצי Kubernetes ("repo הגדרות") ב-repo נפרד מקוד האפליקציה. למה?
+    options:
+      - "היסטוריית הפריסות נשארת נקייה, ה-CI יכול לעשות commit לתגיות בלי ליצור לולאה של בניות, ואפשר להגביל בנפרד את הגישה להגדרות של production"
+      - "Argo CD לא יכול לקרוא repos של אפליקציות"
+      - "יש מגבלת גודל ל-repos ב-Git"
+      - "Kubernetes דורש את זה"
+    explanation: "repo אחד עובד גם הוא בפרויקטים קטנים (ב-MyBroker האפליקציה וה-chart שלה באותו repo). ההפרדה חשובה יותר כשיש יותר צוותים וסביבות."
+
+  gitops-argo-010:
+    prompt: מה עושה "sync" ב-Argo CD?
+    options:
+      - "מחיל את הקבצים מ-Git על ה-cluster, כך שהמצב החי יתאים למה שכתוב ב-Git"
+      - "דוחף את המצב של ה-cluster ל-Git"
+      - "מעתיק images בין registries"
+      - "מפעיל מחדש את כל ה-pods"
+    explanation: "sync יכול להיות ידני (כפתור, או `argocd app sync`) או אוטומטי (auto-sync). כברירת מחדל Argo CD בודק את Git בערך כל 3 דקות, או מיד אם יש webhook."
+
+  gitops-argo-011:
+    prompt: הציגו את כל האפליקציות של Argo CD עם ה-CLI של Argo CD.
+    explanation: "מוצגים לכל אפליקציה מצב הסנכרון, התקינות, הגרסה ב-Git והיעד. Applications הם גם אובייקטים של Kubernetes, ולכן גם `kubectl get applications -n argocd` עובד."
+
+  gitops-argo-012:
+    prompt: הציגו את הפרטים, מצב הסנכרון והתקינות של האפליקציה בשם `mybroker-staging` ב-Argo CD.
+    explanation: "מוצג כל משאב באפליקציה עם המצב שלו, כך שרואים איזה מהם OutOfSync או Degraded. `--refresh` גורם ל-Argo CD לבדוק את Git עכשיו."
+
+  gitops-argo-013:
+    prompt: הציגו את ההבדלים בין Git ל-cluster החי עבור האפליקציה בשם `mybroker-prod`.
+    explanation: "שימושי לאפליקציות OutOfSync: רואים בדיוק אילו שדות שונים. הרבה פעמים זה שדה ש-controller אחר משנה (כמו replicas על ידי HPA), ואפשר להגיד ל-Argo CD להתעלם ממנו."
+
+  gitops-argo-014:
+    prompt: איפה Argo CD רץ?
+    options:
+      - "בתוך cluster של Kubernetes, כקבוצה של pods (application controller, repo server, שרת API וממשק)"
+      - "רק על המחשב של המפתח"
+      - "בתוך GitHub Actions"
+      - "על שרת ה-Git"
+    explanation: "בדרך כלל ב-namespace משלו בשם `argocd`. Argo CD אחד יכול לנהל את ה-cluster שבו הוא רץ, וגם clusters אחרים שרושמים אצלו."
+
+  gitops-argo-015:
+    prompt: Job של migration למסד הנתונים חייב להסתיים לפני שהגרסה החדשה של ה-Deployment מתחילה לעלות. איך עושים את זה עם Argo CD?
+    options:
+      - "הופכים את ה-Job ל-hook מסוג PreSync (או שמים אותו ב-sync wave מוקדם יותר), כך ש-Argo CD מריץ אותו ומחכה לפני שהוא מסנכרן את השאר"
+      - "פורסים את ה-Job ידנית עם kubectl קודם"
+      - "שמים את ה-Job ואת ה-Deployment באותו קובץ YAML"
+      - "אי אפשר עם GitOps"
+    explanation: "annotations: ‏`argocd.argoproj.io/hook: PreSync` ל-hooks, ו-`argocd.argoproj.io/sync-wave: \"-1\"` כדי לקבוע סדר. אם ה-hook נכשל, הסנכרון עוצר והגרסה הישנה ממשיכה לרוץ."
+
+  gitops-argo-016:
+    prompt: בשביל מה משתמשים ב-ApplicationSet של Argo CD?
+    options:
+      - "כדי לייצר הרבה Applications מתבנית אחת, למשל אחת לכל סביבה, לכל cluster או לכל תיקייה ב-Git"
+      - "כדי לקבץ משתמשים והרשאות"
+      - "כדי לשמור secrets לאפליקציות"
+      - "כדי להריץ בדיקות לפני סנכרון"
+    explanation: "במקום לכתוב עשרה קובצי Application כמעט זהים, generator (רשימה, clusters, תיקיות ב-Git) ממלא את התבנית. זו חלופה ל-app-of-apps כשיש דפוס שחוזר על עצמו."

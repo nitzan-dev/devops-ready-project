@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ t.review }}</h1>
+{% if mistakes %}
+  <p class="muted">{{ t.review_help }}</p>
+  <ul class="list">
+    {% for q in mistakes %}
+    <li>
+      <a href="{{ url_for('question', question_id=q.id) }}">{{ tx(q, 'prompt') | md_inline }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p>{{ t.no_mistakes }}</p>
+{% endif %}
+{% endblock %}

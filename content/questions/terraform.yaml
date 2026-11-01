@@ -1,0 +1,414 @@
+topic: terraform
+questions:
+  # ---------- IaC concepts ----------
+  - id: tf-iac-001
+    type: open
+    subtopic: iac-concepts
+    level: 1
+    tags: [il-common]
+    prompt: What is Infrastructure as Code, and why is it better than clicking in the cloud console?
+    rubric:
+      keyPoints:
+        - { text: "Infrastructure defined in code/config files, applied by a tool", weight: 2 }
+        - { text: "Version-controlled and reviewable (PRs, history, who changed what)", weight: 2 }
+        - { text: "Reproducible and consistent environments (dev/staging/prod alike), easy to recreate (DR)", weight: 3 }
+        - { text: "Automatable in CI/CD, less manual error, drift detection", weight: 2 }
+    modelAnswer: |
+      Infrastructure as Code means describing servers, networks, databases and permissions in files, and letting a tool like Terraform create and update them. Compared with clicking in the console: it's in Git, so changes are reviewed in pull requests and you have history and accountability. It's repeatable, so staging and prod come from the same code and you can rebuild an environment after a disaster. It can run from CI/CD, which removes manual mistakes. And the tool can detect drift when someone changes things by hand. The code is also documentation of what exists.
+    explanation: "Declarative IaC (Terraform, CloudFormation) describes the end state; imperative tools describe steps."
+
+  - id: tf-iac-002
+    type: open
+    subtopic: iac-concepts
+    level: 2
+    tags: [il-common]
+    prompt: What's the difference between Terraform and Ansible? When would you use each?
+    rubric:
+      keyPoints:
+        - { text: "Terraform: provisioning infrastructure (cloud resources), declarative, keeps state", weight: 3 }
+        - { text: "Ansible: configuration management (installing packages, configuring OS/apps on servers), procedural-ish playbooks, agentless over SSH, no state file", weight: 3 }
+        - { text: "They complement each other: Terraform creates VMs/network, Ansible configures them", weight: 2 }
+        - { text: "With containers/immutable images, config management matters less (bake images with Packer/Dockerfiles)", weight: 1 }
+    modelAnswer: |
+      Terraform is for provisioning: it creates and manages infrastructure resources like VPCs, VMs, databases, DNS and IAM through provider APIs. It's declarative and tracks what it created in a state file, so it can plan diffs and delete things. Ansible is mainly configuration management: it connects to existing machines over SSH, no agent needed, and runs playbooks to install packages, write config files and restart services. It has no state file and relies on idempotent modules. They're often used together: Terraform creates the servers, Ansible configures them. In container-based setups you need Ansible less, because you bake images instead of configuring live servers.
+    explanation: "Ansible can create cloud resources and Terraform can run scripts, but each is best at its own job."
+
+  - id: tf-iac-003
+    type: mcq
+    subtopic: iac-concepts
+    level: 1
+    prompt: What does **idempotent** mean for an IaC or configuration tool?
+    options:
+      - "Applying the same configuration repeatedly results in the same state; a second run changes nothing if nothing drifted"
+      - "It runs only once"
+      - "It runs in parallel"
+      - "It can't be rolled back"
+    correct: [0]
+    explanation: '`terraform apply` twice in a row: the second shows "No changes". The same goes for a well-written Ansible playbook. A raw shell script that does `useradd` twice fails the second time unless it checks first.'
+
+  # ---------- Basics ----------
+  - id: tf-basic-001
+    type: order
+    subtopic: basics
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: Put the core Terraform workflow in order.
+    steps:
+      - "terraform init (download providers/modules, configure backend)"
+      - "terraform fmt / validate"
+      - "terraform plan (show what would change)"
+      - "terraform apply (make the changes, update state)"
+      - "terraform destroy (when tearing the environment down)"
+    explanation: In CI, `plan` runs on the PR and its output is reviewed; `apply` runs after merge, ideally using the saved plan file (`plan -out`).
+
+  - id: tf-basic-002
+    type: open
+    subtopic: basics
+    level: 1
+    prompt: Explain providers, resources and data sources in Terraform.
+    rubric:
+      keyPoints:
+        - { text: "Provider: plugin that talks to an API (aws, kubernetes, helm, github) and is configured with credentials/region", weight: 3 }
+        - { text: "Resource: something Terraform creates and manages (aws_instance, aws_s3_bucket); tracked in state", weight: 3 }
+        - { text: "Data source: reads existing information without managing it (an AMI ID, an existing VPC)", weight: 3 }
+    modelAnswer: |
+      A **provider** is a plugin that knows how to talk to one API, like AWS, Kubernetes, Helm or GitHub. You configure it with things like the region and credentials, and `terraform init` downloads it. A **resource** is an object Terraform creates and owns, for example `aws_s3_bucket` or `aws_instance`. It's recorded in the state, and Terraform will update or delete it to match the code. A **data source** only reads information about something that already exists or is managed elsewhere, like the latest Ubuntu AMI, an existing VPC, or the current account ID, so you can reference it without managing it.
+    explanation: "In MyBroker I used the kind, helm and kubernetes providers to create the cluster and install the platform charts."
+
+  - id: tf-basic-003
+    type: mcq
+    subtopic: basics
+    level: 2
+    prompt: How does Terraform know in which order to create resources?
+    options:
+      - "It builds a dependency graph from references between resources (implicit) and depends_on (explicit), and creates independent resources in parallel"
+      - "Top to bottom in the file"
+      - "Alphabetically by resource name"
+      - "You must number every resource"
+    correct: [0]
+    explanation: "If a subnet references `aws_vpc.main.id`, Terraform knows the VPC comes first. File order doesn't matter. `depends_on` is only for hidden dependencies that no attribute reference expresses."
+
+  - id: tf-basic-004
+    type: mcq
+    subtopic: basics
+    level: 2
+    prompt: '`terraform plan` shows `-/+ destroy and then create replacement` for a database. What does that mean?'
+    options:
+      - "A changed argument can't be updated in place, so Terraform will DELETE and recreate the resource; for a database, possible data loss, so stop and review"
+      - "It's a harmless in-place update"
+      - "Terraform will only create a new one and keep the old"
+      - "The plan failed"
+    correct: [0]
+    explanation: "Some attributes force replacement (marked `# forces replacement` in the plan). Always read plans. Protect critical resources with `lifecycle { prevent_destroy = true }` and deletion protection."
+
+  # ---------- State ----------
+  - id: tf-state-001
+    type: open
+    subtopic: state
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: What is the Terraform state file, why does it exist, and how should a team store it?
+    rubric:
+      keyPoints:
+        - { text: "State maps the resources in code to real-world objects (IDs) and stores their attributes", weight: 3 }
+        - { text: "Needed to compute diffs/plans, track dependencies and know what to update/delete; also caches for performance", weight: 2 }
+        - { text: "Teams must use a remote backend (S3, GCS, Terraform Cloud) so everyone shares one state", weight: 3 }
+        - { text: "With state locking (S3 native lockfile or DynamoDB) to prevent concurrent applies", weight: 2 }
+        - { text: "State can contain secrets in plain text: encrypt it and restrict access; never commit it to Git", weight: 2 }
+    modelAnswer: |
+      The state is Terraform's record of what it manages: it maps each resource in the code, like `aws_instance.web`, to the real object ID, `i-0abc…`, with its attributes. Without it, Terraform couldn't tell what exists, what changed, or what to delete when you remove code. For a team, a local `terraform.tfstate` doesn't work, because each person would have their own view. You use a remote backend like an S3 bucket (versioned and encrypted) with locking, either S3's native lock file or the classic DynamoDB table, so two applies can't run at the same time and corrupt it. The state can also hold secrets in plain text, like database passwords, so access must be restricted, and it should never go into Git.
+    explanation: "In my local kind project the state is a local file because it's a single-user demo. In a real team I'd use an S3 backend with locking."
+    followUps: ["What happens if two people run terraform apply at the same time without locking?"]
+
+  - id: tf-state-002
+    type: mcq
+    subtopic: state
+    level: 2
+    prompt: An `apply` crashed and now every command says the state is locked. What's the safe way forward?
+    options:
+      - "Make sure no other apply is really running, then `terraform force-unlock <LOCK_ID>`"
+      - "Delete the state file"
+      - "Run apply with -lock=false every time from now on"
+      - "Recreate all resources"
+    correct: [0]
+    explanation: "force-unlock only removes the lock, not the state. Confirm first that nobody (and no CI job) is mid-apply. Deleting the state means Terraform forgets everything and would try to create duplicates."
+
+  - id: tf-state-003
+    type: open
+    subtopic: state
+    level: 2
+    prompt: What is drift, and how do you detect and handle it?
+    rubric:
+      keyPoints:
+        - { text: "Drift: the real infrastructure no longer matches the code/state (manual console changes, other tools)", weight: 3 }
+        - { text: "Detect with terraform plan (refresh shows differences), ideally scheduled in CI", weight: 3 }
+        - { text: "Either revert the manual change by applying the code, or update the code to match if the change was intended", weight: 2 }
+        - { text: "Prevent with limited console write access and all changes via PRs", weight: 1 }
+    modelAnswer: |
+      Drift is when reality differs from the code, usually because someone changed something by hand in the console during an incident, or another tool touched it. `terraform plan` refreshes the state from the real resources and shows the difference. Many teams run a scheduled plan in CI and alert when it's not empty. Then you decide: if the manual change was wrong, `apply` puts it back; if it was a legitimate fix, you update the code to match so the next apply doesn't undo it. Long term, you restrict write access in the console so changes go through pull requests.
+    explanation: "`terraform plan -refresh-only` shows only drift, without proposing changes to match the code."
+
+  - id: tf-state-004
+    type: mcq
+    subtopic: state
+    level: 3
+    prompt: You renamed `aws_instance.web` to `aws_instance.app` in code. How do you stop Terraform from destroying and recreating the instance?
+    options:
+      - "Add a `moved` block (from = aws_instance.web, to = aws_instance.app) or run `terraform state mv`"
+      - "Nothing; renames are always detected"
+      - "Delete the state file"
+      - "Use `terraform import` on the old name"
+    correct: [0]
+    explanation: "Terraform tracks resources by address. A new address looks like a new resource. A `moved {}` block (reviewable in code) or `terraform state mv` updates the address in the state."
+
+  # ---------- Variables, outputs, modules ----------
+  - id: tf-mod-001
+    type: open
+    subtopic: modules-vars
+    level: 1
+    prompt: What are Terraform modules, and why use them?
+    rubric:
+      keyPoints:
+        - { text: "A module is a reusable group of resources (a directory with .tf files) with input variables and outputs", weight: 3 }
+        - { text: "Every configuration is a root module that calls child modules", weight: 1 }
+        - { text: "Reuse and consistency: same VPC/EKS pattern for every environment/team (DRY)", weight: 3 }
+        - { text: "Can come from local paths, Git, or the Terraform Registry; pin versions", weight: 2 }
+    modelAnswer: |
+      A module is a reusable package of Terraform code, just a directory of `.tf` files with input variables and outputs. Your main configuration is the root module, and it calls child modules: for example a `vpc` module that creates the VPC, subnets, route tables and NAT gateway from a few inputs like the CIDR and the number of AZs. Modules let you build the same thing consistently across dev, staging and prod or across teams, without copy-paste, and encapsulate best practices. They can come from a local path, a Git repo or the public registry, like `terraform-aws-modules/vpc`, and you pin their versions just like any dependency.
+    explanation: "Inputs are `variable` blocks, outputs are `output` blocks, and `locals` are computed internal values."
+
+  - id: tf-mod-002
+    type: mcq
+    subtopic: modules-vars
+    level: 2
+    prompt: How should you pass a database password into Terraform?
+    options:
+      - "Mark the variable `sensitive = true` and supply it from an env var (TF_VAR_db_password) or a secret manager; never hard-code it or commit a tfvars with it"
+      - "Hard-code it in main.tf"
+      - "Commit it in terraform.tfvars"
+      - "Put it in the resource name"
+    correct: [0]
+    explanation: "`sensitive` hides it in plan output but it **still lands in the state**, so protect the state. Better: let AWS generate and manage it (`manage_master_user_password` on RDS) or read it from Secrets Manager."
+
+  - id: tf-mod-003
+    type: mcq
+    subtopic: modules-vars
+    level: 2
+    prompt: What's a common way to manage dev/staging/prod with Terraform?
+    options:
+      - "Separate root configurations (or directories) per environment that call the same modules with different variables, each with its own state"
+      - "One state file for all environments"
+      - "Copy-paste the whole code per environment and edit by hand"
+      - "Only use prod"
+    correct: [0]
+    explanation: "Separate state per environment limits the blast radius. Workspaces are another option for near-identical environments. Tools like Terragrunt help keep things DRY."
+
+  # ---------- Advanced ----------
+  - id: tf-adv-001
+    type: open
+    subtopic: advanced
+    level: 2
+    prompt: What's the difference between `count` and `for_each`? Why is `for_each` often safer?
+    rubric:
+      keyPoints:
+        - { text: "count creates N copies indexed by number (resource[0], [1]…)", weight: 2 }
+        - { text: "for_each creates one instance per map key/set element, addressed by key (resource[\"web\"])", weight: 2 }
+        - { text: "With count, removing an item from the middle of a list shifts indexes and causes Terraform to destroy/recreate the following resources", weight: 3 }
+        - { text: "for_each keys are stable, so adding/removing one item only affects that item", weight: 2 }
+    modelAnswer: |
+      `count = 3` creates numbered copies: `aws_instance.web[0]`, `[1]`, `[2]`. `for_each` takes a map or set and creates one instance per key: `aws_s3_bucket.b["logs"]`, `["assets"]`. The difference shows when you change the list. With count over `["a","b","c"]`, removing "b" makes "c" move from index 2 to index 1, so Terraform destroys and recreates resources that didn't really change. With for_each, each instance is tied to its key, so removing "b" only removes "b". Use count for simple "N identical things" or on/off toggles (`count = var.enabled ? 1 : 0`), and for_each for collections of distinct things.
+    explanation: A very common interview question, often asked as "what would happen if…".
+
+  - id: tf-adv-002
+    type: command
+    subtopic: advanced
+    level: 2
+    prompt: An S3 bucket `my-logs` was created by hand. Bring it under Terraform management as `aws_s3_bucket.logs` (CLI way).
+    answers: ["terraform import aws_s3_bucket.logs my-logs"]
+    samples: []
+    rejects: ["terraform apply aws_s3_bucket.logs", "terraform import my-logs aws_s3_bucket.logs"]
+    explanation: "`terraform import ADDRESS ID`. Write the resource block first. Since Terraform 1.5 you can also use an `import {}` block in code, which shows up in `plan` and can generate config with `-generate-config-out`."
+
+  - id: tf-adv-003
+    type: mcq
+    subtopic: advanced
+    level: 2
+    prompt: Which `lifecycle` setting makes Terraform refuse to destroy a resource (e.g. a production database)?
+    options: ["prevent_destroy = true", "create_before_destroy = true", "ignore_changes = all", "replace_triggered_by"]
+    correct: [0]
+    explanation: "`create_before_destroy` creates the replacement first (zero-downtime swaps), `ignore_changes` stops Terraform fighting with attributes changed elsewhere (like an ASG's desired_capacity managed by autoscaling), and `replace_triggered_by` forces replacement when something else changes."
+
+  # ---------- Ansible ----------
+  - id: tf-ans-001
+    type: open
+    subtopic: ansible
+    level: 1
+    tags: [il-common]
+    prompt: 'Explain Ansible''s main concepts: inventory, playbook, task, module, role, and how it connects to hosts.'
+    rubric:
+      keyPoints:
+        - { text: "Agentless: connects over SSH (WinRM for Windows) and runs Python modules on the target", weight: 3 }
+        - { text: "Inventory: list/groups of hosts (static file or dynamic from cloud)", weight: 2 }
+        - { text: "Playbook: YAML with plays mapping host groups to tasks; tasks call modules (apt, copy, template, service)", weight: 3 }
+        - { text: "Roles: reusable bundles of tasks, templates, handlers and defaults; handlers run on change (restart nginx)", weight: 2 }
+    modelAnswer: |
+      Ansible is agentless. It connects to machines over SSH and runs small Python modules there, so nothing has to be installed on the targets except Python. The **inventory** lists the hosts, grouped, like `[web]` and `[db]`; it can be a static file or generated dynamically from AWS. A **playbook** is YAML that says "for hosts in group web, run these tasks". Each **task** calls a **module**: `apt` to install a package, `template` to render a Jinja2 config file, `service` to make sure nginx is running. Modules are idempotent, so they only change what's needed. **Handlers** run when notified by a change, typically to restart a service after its config changed. **Roles** package tasks, templates, handlers and default variables into reusable units, shareable through Ansible Galaxy.
+    explanation: "`ansible-playbook site.yml --check --diff` is a dry run. Sensitive variables go into Ansible Vault."
+
+  - id: tf-ans-002
+    type: mcq
+    subtopic: ansible
+    level: 2
+    prompt: Why prefer Ansible's `apt`/`copy`/`service` modules over a `shell:` task that runs the same commands?
+    options:
+      - "Modules are idempotent and report 'changed' accurately, support check mode, and handle edge cases; shell commands run every time"
+      - "shell is not allowed in playbooks"
+      - "Modules run faster because they skip SSH"
+      - "There's no reason"
+    correct: [0]
+    explanation: "Use `shell` or `command` only when no module exists, and then add `creates:` or `changed_when:` to keep it idempotent."
+
+  - id: tf-ans-003
+    type: command
+    subtopic: ansible
+    level: 2
+    prompt: Run the playbook `site.yml` against the inventory file `hosts.ini`, as a dry run that shows what would change.
+    answers: ["ansible-playbook -i hosts.ini site.yml --check --diff"]
+    patterns: ['^ansible-playbook (?=.*-i ?hosts\.ini)(?=.*--check)(?=.*site\.yml).*$']
+    samples: ["ansible-playbook site.yml -i hosts.ini --check", "ansible-playbook --check --diff -i hosts.ini site.yml"]
+    rejects: ["ansible-playbook -i hosts.ini site.yml", "ansible site.yml --check"]
+    explanation: "`--check` is a dry run and `--diff` shows file changes. `--limit web1` targets a subset, and `-K` asks for the become (sudo) password."
+
+  # ---------- Added: basics ----------
+  - id: tf-iac-004
+    type: mcq
+    subtopic: iac-concepts
+    level: 1
+    prompt: Terraform is **declarative**. What does that mean?
+    options:
+      - "You describe the end result you want (3 servers, this VPC), and the tool works out the steps to get there"
+      - "You write each step in order (create this, then that)"
+      - "It only reads infrastructure and never changes it"
+      - "It runs only on demand from the console"
+    correct: [0]
+    explanation: "Change `count = 3` to `count = 5` and Terraform adds 2; it figures out the difference. With an imperative script you'd have to write the logic yourself (\"how many exist? create the missing ones\")."
+
+  - id: tf-basic-005
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Prepare a new Terraform folder so it can be used (download providers and set up the backend).
+    answers: ["terraform init"]
+    patterns: ['^terraform init( -upgrade)?$']
+    samples: ["terraform init -upgrade"]
+    rejects: ["terraform plan", "terraform start"]
+    explanation: "Run it once in a new folder, and again after adding a provider or module or changing the backend. It creates `.terraform/` and the lock file `.terraform.lock.hcl` (commit the lock file, not the folder)."
+
+  - id: tf-basic-006
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Preview the changes Terraform would make, and save that plan to a file called `tfplan`.
+    answers: ["terraform plan -out=tfplan"]
+    patterns: ['^terraform plan -out[= ]tfplan$']
+    samples: ["terraform plan -out tfplan"]
+    rejects: ["terraform plan", "terraform apply tfplan"]
+    explanation: "Saving the plan guarantees that `apply` does exactly what you reviewed, even if something changed in between. This is the usual CI pattern: plan on the PR, apply the saved plan after approval."
+
+  - id: tf-basic-007
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Apply the saved plan file `tfplan`.
+    answers: ["terraform apply tfplan"]
+    patterns: ['^terraform apply tfplan$']
+    samples: []
+    rejects: ["terraform apply", "terraform plan tfplan"]
+    explanation: "With a saved plan, apply doesn't ask for confirmation; the review already happened. A plain `terraform apply` makes a new plan and asks you to type `yes`."
+
+  - id: tf-basic-008
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Rewrite the `.tf` files in this folder to Terraform's standard formatting.
+    answers: ["terraform fmt"]
+    patterns: ['^terraform fmt( -recursive)?$']
+    samples: ["terraform fmt -recursive"]
+    rejects: ["terraform validate", "terraform plan"]
+    explanation: "`fmt` fixes indentation and alignment. In CI, `terraform fmt -check` fails the build if files aren't formatted. `terraform validate` checks the syntax and references."
+
+  - id: tf-basic-009
+    type: mcq
+    subtopic: basics
+    level: 1
+    prompt: What does `terraform plan` do?
+    options:
+      - "Compares the code with the state and the real infrastructure, and shows what it would create, change or delete, without changing anything"
+      - "Creates the resources"
+      - "Deletes resources that aren't in the code"
+      - "Downloads the providers"
+    correct: [0]
+    explanation: "In the output, `+` means create, `~` means change in place, `-` means delete, and `-/+` means delete and recreate. Read every plan before you apply, especially the `-` lines."
+
+  - id: tf-mod-004
+    type: mcq
+    subtopic: modules-vars
+    level: 1
+    prompt: What is a Terraform `output` used for?
+    options:
+      - "To show values after apply (like a load balancer's DNS name) and to pass values from a module to the code that calls it"
+      - "To write logs to a file"
+      - "To print debug messages during plan"
+      - "To export the state to Git"
+    correct: [0]
+    explanation: "Example: a `vpc` module outputs `private_subnet_ids`, and the `eks` module uses them. `terraform output` prints the values. Outputs can be marked `sensitive`."
+
+  - id: tf-mod-005
+    type: mcq
+    subtopic: modules-vars
+    level: 1
+    prompt: Which are valid ways to give a Terraform variable a value without editing the `.tf` code? (Select all.)
+    options:
+      - "A `terraform.tfvars` (or `*.auto.tfvars`) file"
+      - "`-var 'region=eu-west-1'` on the command line"
+      - "An environment variable `TF_VAR_region`"
+      - "Editing the provider plugin"
+    correct: [0, 1, 2]
+    explanation: "A `default` in the `variable` block is used if nothing else is given. Command-line `-var` wins over tfvars files, which win over env vars. Keep secrets out of committed tfvars files."
+
+  - id: tf-state-005
+    type: mcq
+    subtopic: state
+    level: 1
+    prompt: Should you commit `terraform.tfstate` to Git?
+    options:
+      - "No: it can contain secrets in plain text, and teammates would overwrite each other's state; use a remote backend"
+      - "Yes, always, so it's versioned"
+      - "Only on the main branch"
+      - "Yes, but only in private repositories"
+    correct: [0]
+    explanation: "Add `*.tfstate`, `*.tfstate.*` and `.terraform/` to `.gitignore`. A remote backend (like versioned, encrypted S3) gives history, locking and one shared copy."
+
+  - id: tf-state-006
+    type: command
+    subtopic: state
+    level: 2
+    prompt: List the addresses of all resources Terraform is tracking in the state.
+    answers: ["terraform state list"]
+    patterns: ['^terraform state list$']
+    samples: []
+    rejects: ["terraform plan", "terraform state rm"]
+    explanation: "Prints lines like `aws_vpc.main` and `module.eks.aws_eks_cluster.this`. `terraform state show ADDRESS` shows one resource's attributes. Commands like `state rm` change the state, so be careful."
+
+  - id: tf-ans-004
+    type: mcq
+    subtopic: ansible
+    level: 1
+    prompt: What do you need on a Linux server before Ansible can manage it?
+    options:
+      - "SSH access and Python; no Ansible agent is needed"
+      - "The Ansible agent installed and running as a service"
+      - "A Kubernetes cluster"
+      - "Terraform installed on the server"
+    correct: [0]
+    explanation: "Ansible is agentless: it connects from the control machine over SSH and runs its modules with the server's Python. That's a big reason it's simple to start with."

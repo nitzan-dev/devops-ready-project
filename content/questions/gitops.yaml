@@ -1,0 +1,333 @@
+topic: gitops
+questions:
+  - id: gitops-prin-001
+    type: open
+    subtopic: principles
+    level: 1
+    tags: [your-stack]
+    prompt: What is GitOps? What are its core principles?
+    rubric:
+      keyPoints:
+        - { text: "Desired state of the system is declared in Git (declarative manifests)", weight: 3 }
+        - { text: "Git is the single source of truth; changes happen via commits/PRs (review, audit trail)", weight: 3 }
+        - { text: "An agent in the cluster pulls and continuously reconciles actual state to Git (pull model)", weight: 3 }
+        - { text: "Drift is detected and corrected; rollback = git revert", weight: 1 }
+    modelAnswer: |
+      GitOps means the desired state of your environments lives in Git as declarative config, like Kubernetes manifests or Helm values, and Git is the only way to change it. Every change is a commit or pull request, so it's reviewed and there's a full audit trail. An agent running in the cluster, like Argo CD or Flux, continuously pulls from Git and reconciles: if the cluster differs from Git, because of a new commit or someone's manual change, it applies the difference. Deploying means merging a PR, rolling back means reverting it, and drift is fixed automatically.
+    explanation: "OpenGitOps principles: declarative, versioned and immutable, pulled automatically, continuously reconciled."
+
+  - id: gitops-prin-002
+    type: mcq
+    subtopic: principles
+    level: 2
+    prompt: What's a key security advantage of pull-based GitOps over a CI pipeline that pushes to the cluster?
+    options:
+      - "The CI system doesn't need credentials to the cluster; the agent inside the cluster pulls changes"
+      - "It encrypts all secrets automatically"
+      - "It doesn't need Git"
+      - "It removes the need for RBAC"
+    correct: [0]
+    explanation: Fewer secrets outside the cluster means a smaller attack surface. A compromised CI can at most push to Git, which is reviewable and revertable.
+
+  - id: gitops-argo-001
+    type: open
+    subtopic: argocd
+    level: 2
+    tags: [your-stack]
+    prompt: In Argo CD, what do "Synced/OutOfSync" and "Healthy/Degraded" mean? What do auto-sync, prune and self-heal do?
+    rubric:
+      keyPoints:
+        - { text: "Sync status compares live cluster state to Git: OutOfSync means they differ", weight: 3 }
+        - { text: "Health status reflects whether resources actually work (Deployment available, pods ready); Degraded/Progressing", weight: 3 }
+        - { text: "Auto-sync applies new Git changes automatically", weight: 1 }
+        - { text: "Prune deletes resources that were removed from Git; self-heal reverts manual changes in the cluster", weight: 3 }
+    modelAnswer: |
+      Argo CD tracks two separate things. **Sync status** says whether the live objects match what's in Git: OutOfSync means someone changed the cluster, or Git has a commit that hasn't been applied yet. **Health status** says whether the app actually works: a Deployment whose pods aren't Ready is Progressing or Degraded, even if it's perfectly synced. With **auto-sync**, Argo CD applies new commits without someone clicking Sync. **Prune** deletes resources from the cluster that you removed from Git, which is off by default for safety. **Self-heal** re-applies Git when someone changes the live state, for example a manual `kubectl scale`. A "Synced but Degraded" app usually means a bad image or config that Git itself contains.
+    explanation: "App-of-apps: one root Application whose manifests are other Applications. I used it in MyBroker to create staging and prod."
+
+  - id: gitops-argo-002
+    type: mcq
+    subtopic: argocd
+    level: 2
+    prompt: With Argo CD self-heal enabled, you run `kubectl scale deployment api --replicas=10`. What happens?
+    options:
+      - "Argo CD detects the drift and scales it back to the replica count in Git (unless an HPA manages replicas and it's ignored)"
+      - "The change persists forever"
+      - "Argo CD deletes the deployment"
+      - "kubectl refuses the command"
+    correct: [0]
+    explanation: "With an HPA, you typically omit `replicas` from the manifest or add `ignoreDifferences`, so Argo CD and the HPA don't fight."
+
+  - id: gitops-argo-003
+    type: mcq
+    subtopic: argocd
+    level: 3
+    prompt: How should secrets be handled in a GitOps repository?
+    options:
+      - "Never commit plain Secrets; use Sealed Secrets/SOPS (encrypted in Git) or External Secrets Operator (reference a secret manager)"
+      - "Base64-encode them, which is safe enough"
+      - "Commit them to a private repo in plain text"
+      - "Put them in the Helm chart's values.yaml"
+    correct: [0]
+    explanation: "Base64 isn't encryption. Private repos get cloned, forked and leaked. Encrypt the secrets, or store references to a secret manager."
+
+  - id: gitops-prin-003
+    type: mcq
+    subtopic: principles
+    level: 1
+    prompt: In GitOps, how do you roll back a bad release?
+    options: ["Revert the commit in Git; the GitOps tool syncs the cluster back", "Run kubectl delete on the pods", "SSH into the nodes and restart Docker", "Delete the Git repository"]
+    correct: [0]
+    explanation: "Git is the source of truth, so a rollback is just another commit (`git revert`). It's reviewed, logged, and the cluster follows automatically."
+
+  - id: gitops-prin-004
+    type: mcq
+    subtopic: principles
+    level: 1
+    prompt: Which of these are GitOps tools? (Select all.)
+    options: ["Argo CD", "Flux", "Jenkins", "Prometheus"]
+    correct: [0, 1]
+    explanation: "Argo CD and Flux run inside the cluster and sync it from Git. Jenkins is a CI server (push model), and Prometheus is monitoring."
+
+  - id: gitops-prin-005
+    type: open
+    subtopic: principles
+    level: 2
+    prompt: How do CI and GitOps split the work in a typical pipeline?
+    rubric:
+      keyPoints:
+        - { text: "CI builds, tests and scans the code, then pushes an image to a registry", weight: 3 }
+        - { text: "CI (or a bot) updates the image tag in the config/manifest repo with a commit or PR", weight: 3 }
+        - { text: "The GitOps agent in the cluster sees the change in Git and deploys it", weight: 3 }
+        - { text: "CI never talks to the cluster directly; promotion to prod is a PR", weight: 1 }
+    modelAnswer: |
+      CI owns everything up to the artifact: build, tests, scans, and pushing the image with an immutable tag to the registry. Then it changes Git, not the cluster: it commits the new tag into the manifests or Helm values, often as a pull request for production. The GitOps agent, Argo CD or Flux, notices the commit and syncs the cluster. So CI never needs cluster credentials, every deploy is a commit you can review and revert, and promoting to prod is just merging a PR.
+    explanation: "In MyBroker, release.yml pushes to GHCR and commits the tag to values-staging.yaml; a v* tag opens a promotion PR for prod."
+
+  - id: gitops-argo-004
+    type: mcq
+    subtopic: argocd
+    level: 1
+    prompt: What is an Argo CD Application?
+    options:
+      - "An object that says: take this path in this Git repo and keep it synced into this cluster and namespace"
+      - "A Docker image built by Argo CD"
+      - "A Kubernetes Deployment with extra labels"
+      - "A CI job"
+    correct: [0]
+    explanation: "An Application points to a source (repo, path or Helm chart, revision) and a destination (cluster, namespace), plus a sync policy like auto-sync, prune and self-heal."
+
+  - id: gitops-argo-005
+    type: mcq
+    subtopic: argocd
+    level: 2
+    prompt: What is the "app of apps" pattern in Argo CD?
+    options:
+      - "One root Application whose Git folder contains other Application manifests, so a single app creates all the others"
+      - "Running several Argo CD servers"
+      - "Putting all services in one Deployment"
+      - "An Application that has no source"
+    correct: [0]
+    explanation: "Bootstrapping becomes one step: create the root app and it creates staging, prod and the platform apps. ApplicationSets are a more dynamic alternative."
+
+  - id: gitops-argo-006
+    type: open
+    subtopic: argocd
+    level: 2
+    prompt: Argo CD shows an app as OutOfSync, but nobody changed Git. What could cause it, and what do you do?
+    rubric:
+      keyPoints:
+        - { text: "Someone changed the live resource by hand (kubectl edit/scale) and self-heal is off", weight: 3 }
+        - { text: "A controller or mutating webhook changes fields (e.g. HPA changes replicas, defaults added)", weight: 2 }
+        - { text: "Look at the diff in Argo CD to see exactly which fields differ", weight: 2 }
+        - { text: "Fix: sync back to Git, or put the change in Git, or ignoreDifferences for fields owned by others", weight: 2 }
+    modelAnswer: |
+      OutOfSync only means the live objects differ from Git. If Git didn't change, the cluster did. Usually someone ran `kubectl edit` or `kubectl scale` while self-heal is off. Sometimes it's another controller: an HPA changes `replicas`, or a mutating webhook adds fields. First I open the app's diff in Argo CD to see exactly which fields differ. If it was a manual change, I either sync back to Git or, if the change was right, put it in Git properly. If the field is owned by another controller like the HPA, I remove it from the manifest or add `ignoreDifferences` so they don't fight.
+    explanation: "Turning on self-heal makes manual drift disappear automatically, which also discourages hand edits."
+
+  - id: gitops-argo-007
+    type: command
+    subtopic: argocd
+    level: 2
+    prompt: Using the Argo CD CLI, sync the application `mybroker-prod` now.
+    answers: ["argocd app sync mybroker-prod"]
+    samples: []
+    rejects: ["argocd sync mybroker-prod", "kubectl apply mybroker-prod"]
+    explanation: "`argocd app get` shows status and resources, `argocd app diff` shows what would change, and `argocd app history` / `rollback` work with previous syncs."
+
+  - id: gitops-argo-008
+    type: mcq
+    subtopic: argocd
+    level: 2
+    prompt: What does an Argo CD AppProject control?
+    options:
+      - "Which Git repos an Application may use, which clusters/namespaces it may deploy to, and which resource kinds are allowed"
+      - "The CPU limits of the Argo CD server"
+      - "The Git branch naming rules"
+      - "The Docker registry credentials"
+    correct: [0]
+    explanation: "Projects are guardrails. MyBroker's project only allows its own repo as a source and the mybroker-* namespaces as destinations, with no cluster-wide resources."
+
+  - id: gitops-argo-009
+    type: mcq
+    subtopic: argocd
+    level: 3
+    prompt: Why might Argo CD and an HPA fight over a Deployment, and what's the usual fix?
+    options:
+      - "The manifest sets replicas, the HPA changes it, and self-heal sets it back; remove replicas from the manifest or ignore that field"
+      - "The HPA deletes Argo CD's Application"
+      - "Argo CD disables metrics-server"
+      - "They never conflict"
+    correct: [0]
+    explanation: "When something else owns a field, Git shouldn't also set it. Leave `replicas` out (the HPA sets it) or use `ignoreDifferences` on `/spec/replicas`."
+
+  # ---------- Added: basics ----------
+  - id: gitops-prin-006
+    type: mcq
+    subtopic: principles
+    level: 1
+    prompt: In GitOps, what does "Git is the source of truth" mean?
+    options:
+      - "The desired state of the system is whatever is in Git; to change the cluster you change Git, and a tool makes the cluster match"
+      - "All source code must be in one repository"
+      - "Git stores backups of the cluster's data"
+      - "Only Git administrators can deploy"
+    correct: [0]
+    explanation: "If the cluster and Git disagree, Git wins. That gives you history, review and rollback for every change, the same way you get them for code."
+
+  - id: gitops-prin-007
+    type: mcq
+    subtopic: principles
+    level: 1
+    prompt: What's the difference between push-based and pull-based deployment?
+    options:
+      - "Push: the CI pipeline connects to the cluster and applies changes. Pull: an agent inside the cluster watches Git and applies changes itself"
+      - "Push uses git push; pull uses git pull on a laptop"
+      - "Push is for Docker images; pull is for Helm charts"
+      - "There is no difference"
+    correct: [0]
+    explanation: "GitOps tools like Argo CD and Flux are pull-based. The cluster doesn't need to be reachable from CI, and CI doesn't need cluster credentials."
+
+  - id: gitops-prin-008
+    type: mcq
+    subtopic: principles
+    level: 1
+    prompt: With GitOps, how do you deploy a new version of your app?
+    options:
+      - "Change the image tag in the Git repo (through a commit or pull request); the GitOps controller notices and syncs the cluster"
+      - "Run `kubectl set image` on the cluster"
+      - "SSH to a node and pull the image"
+      - "Restart the Argo CD server"
+    correct: [0]
+    explanation: "Often CI makes that commit automatically after building the image, at least for staging. For production it's usually a pull request someone approves."
+
+  - id: gitops-prin-009
+    type: mcq
+    subtopic: principles
+    level: 2
+    prompt: What is "drift" in GitOps, and how is it handled?
+    options:
+      - "The live cluster no longer matches Git (e.g. a manual kubectl edit); the controller shows it as OutOfSync and, with self-heal on, changes it back"
+      - "Git commits that haven't been pushed"
+      - "Pods moving between nodes"
+      - "The image tag getting older"
+    correct: [0]
+    explanation: "Self-heal makes Git the only way to change things. During an incident, if you really need a manual change, you pause auto-sync first, then put the fix into Git."
+
+  - id: gitops-prin-010
+    type: mcq
+    subtopic: principles
+    level: 2
+    prompt: Many teams keep the Kubernetes manifests (the "config repo") in a different Git repository from the application code. Why?
+    options:
+      - "Deploy history stays clean, CI can commit image tags without triggering an app build loop, and access to production config can be restricted separately"
+      - "Argo CD can't read application repositories"
+      - "Git repositories have a size limit"
+      - "It's required by Kubernetes"
+    correct: [0]
+    explanation: "A single repo also works for small projects (MyBroker keeps the app and its chart in one repo). The split matters more as teams and environments grow."
+
+  - id: gitops-argo-010
+    type: mcq
+    subtopic: argocd
+    level: 1
+    prompt: What does a "sync" in Argo CD do?
+    options:
+      - "Applies the manifests from Git to the cluster, so the live state matches what Git says"
+      - "Pushes the cluster's state into Git"
+      - "Copies images between registries"
+      - "Restarts all pods"
+    correct: [0]
+    explanation: "A sync can be manual (a button or `argocd app sync`) or automatic (auto-sync). Argo CD checks Git about every 3 minutes by default, or right away with a webhook."
+
+  - id: gitops-argo-011
+    type: command
+    subtopic: argocd
+    level: 1
+    prompt: List all Argo CD applications with the Argo CD CLI.
+    answers: ["argocd app list"]
+    patterns: ['^argocd app list( -p \S+)?$', '^kubectl get (applications|application|app|apps)(\.argoproj\.io)? (-n|--namespace)[ =]argocd$']
+    samples: ["kubectl get applications -n argocd"]
+    rejects: ["argocd list", "kubectl get deployments -n argocd"]
+    explanation: "It shows each app's sync status, health, target revision and destination. Applications are Kubernetes objects too, so `kubectl get applications -n argocd` works as well."
+
+  - id: gitops-argo-012
+    type: command
+    subtopic: argocd
+    level: 1
+    prompt: Show the details, sync status and health of the Argo CD application `mybroker-staging`.
+    answers: ["argocd app get mybroker-staging"]
+    patterns: ['^argocd app get mybroker-staging( --refresh| --hard-refresh)?$']
+    samples: ["argocd app get mybroker-staging --refresh"]
+    rejects: ["argocd app sync mybroker-staging", "argocd get mybroker-staging"]
+    explanation: "It lists every resource in the app with its own status, so you can see which one is OutOfSync or Degraded. `--refresh` makes Argo CD check Git right now."
+
+  - id: gitops-argo-013
+    type: command
+    subtopic: argocd
+    level: 2
+    prompt: Show the differences between Git and the live cluster for the application `mybroker-prod`.
+    answers: ["argocd app diff mybroker-prod"]
+    patterns: ['^argocd app diff mybroker-prod( --refresh)?$']
+    samples: []
+    rejects: ["argocd app get mybroker-prod", "git diff"]
+    explanation: "Useful for OutOfSync apps: you see exactly which fields differ. Often it's a field changed by another controller (like replicas by an HPA), which you can tell Argo CD to ignore."
+
+  - id: gitops-argo-014
+    type: mcq
+    subtopic: argocd
+    level: 1
+    prompt: Where does Argo CD run?
+    options:
+      - "Inside a Kubernetes cluster, as a set of pods (application controller, repo server, API server and UI)"
+      - "Only on the developer's laptop"
+      - "Inside GitHub Actions"
+      - "On the Git server"
+    correct: [0]
+    explanation: "Usually in its own `argocd` namespace. One Argo CD can manage the cluster it runs in and also other clusters you register with it."
+
+  - id: gitops-argo-015
+    type: mcq
+    subtopic: argocd
+    level: 2
+    prompt: A database migration Job must finish before the new version of the Deployment rolls out. How do you do that with Argo CD?
+    options:
+      - "Make the Job a PreSync hook (or put it in an earlier sync wave), so Argo CD runs it and waits before syncing the rest"
+      - "Deploy the Job by hand with kubectl first"
+      - "Put the Job and the Deployment in the same YAML file"
+      - "It's not possible with GitOps"
+    correct: [0]
+    explanation: "Annotations: `argocd.argoproj.io/hook: PreSync` for hooks, and `argocd.argoproj.io/sync-wave: \"-1\"` to order resources. If the hook fails, the sync stops and the old version keeps running."
+
+  - id: gitops-argo-016
+    type: mcq
+    subtopic: argocd
+    level: 2
+    prompt: What is an Argo CD ApplicationSet used for?
+    options:
+      - "Generating many Applications from one template, e.g. one per environment, per cluster or per folder in Git"
+      - "Grouping users and permissions"
+      - "Storing secrets for applications"
+      - "Running tests before a sync"
+    correct: [0]
+    explanation: "Instead of writing ten almost identical Application files, a generator (list, cluster, git directory) fills in the template. It's an alternative to app-of-apps for repeating patterns."

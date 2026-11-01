@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ t.home }}</h1>
+<div class="grid">
+  {% for row in rows %}
+  <div class="card">
+    <h2>{{ topic_title(row.topic) }}</h2>
+    <p class="muted">{{ row.answered }}/{{ row.total }} {{ t.answered }} · {{ row.correct }} {{ t.correct_count }}</p>
+    <div class="bar"><div style="width: {{ (row.correct / row.total * 100) | round }}%"></div></div>
+    <a class="button" href="{{ url_for('practice_topic', topic_id=row.topic.id) }}">{{ t.start }}</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

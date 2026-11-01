@@ -1,0 +1,600 @@
+topic: networking
+questions:
+  # ---------- Models ----------
+  - id: net-models-001
+    type: open
+    subtopic: models
+    level: 1
+    tags: [il-common]
+    prompt: Name the layers of the OSI model and give an example protocol or device for a few of them.
+    rubric:
+      keyPoints:
+        - { text: "Lists the 7 layers in order: Physical, Data Link, Network, Transport, Session, Presentation, Application", weight: 3 }
+        - { text: "L2 Data Link: MAC addresses, Ethernet, switches", weight: 2 }
+        - { text: "L3 Network: IP, routing, routers", weight: 2 }
+        - { text: "L4 Transport: TCP/UDP, ports", weight: 2 }
+        - { text: "L7 Application: HTTP, DNS, SSH", weight: 1 }
+        - { text: "Mentions the practical TCP/IP 4-layer model is what's actually used", weight: 1 }
+    modelAnswer: |
+      From the bottom: 1 Physical (cables, signals), 2 Data Link (Ethernet frames, MAC addresses, switches), 3 Network (IP packets and routing, routers), 4 Transport (TCP and UDP, ports), 5 Session, 6 Presentation (encoding, encryption, often lumped with TLS), 7 Application (HTTP, DNS, SSH). In practice we use the TCP/IP model with 4 layers: link, internet, transport, application. The OSI numbers are still how people talk, like "an L4 vs an L7 load balancer".
+    explanation: '"Please Do Not Throw Sausage Pizza Away" is a common mnemonic. DevOps mostly cares about L2–L4 and L7.'
+
+  - id: net-models-002
+    type: mcq
+    subtopic: models
+    level: 1
+    prompt: An "L7 load balancer" can route based on which of these?
+    options: ["The HTTP path or Host header", "Only the destination IP and port", "The MAC address", "The physical cable it arrives on"]
+    correct: [0]
+    explanation: L7 means application layer, so it understands HTTP and can route `/api` to one backend and `/static` to another, terminate TLS and add headers. An L4 balancer only sees IPs, ports and TCP/UDP.
+
+  # ---------- TCP / UDP ----------
+  - id: net-tcp-001
+    type: open
+    subtopic: tcp-udp
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between TCP and UDP? Give a use case for each.
+    rubric:
+      keyPoints:
+        - { text: "TCP is connection-oriented (handshake) and reliable: ordered delivery, retransmission, acknowledgements", weight: 3 }
+        - { text: "TCP has flow and congestion control", weight: 1 }
+        - { text: "UDP is connectionless, no delivery or ordering guarantees, lower overhead/latency", weight: 3 }
+        - { text: "TCP examples: HTTP(S), SSH, databases", weight: 1 }
+        - { text: "UDP examples: DNS queries, video/voice streaming, gaming, (QUIC/HTTP3 is built on UDP)", weight: 2 }
+    modelAnswer: |
+      TCP is connection-oriented. It sets up a connection with a 3-way handshake and then guarantees that data arrives, in order and without duplicates, using sequence numbers, ACKs and retransmission. It also does flow and congestion control. That's why HTTP, SSH and database connections use it. UDP just sends datagrams with no handshake and no guarantees, so it's lighter and lower latency. It's used where speed matters more than perfect delivery, or where the app handles reliability itself: DNS queries, voice and video, games, and QUIC, which HTTP/3 runs on.
+    explanation: TCP trades latency for reliability; UDP leaves reliability to the application.
+    followUps: ["Walk me through the TCP 3-way handshake."]
+
+  - id: net-tcp-002
+    type: order
+    subtopic: tcp-udp
+    level: 1
+    tags: [il-common]
+    prompt: Put the TCP 3-way handshake in order.
+    steps:
+      - "Client sends SYN (with its initial sequence number)"
+      - "Server replies SYN-ACK (its own sequence number + ACK of the client's)"
+      - "Client sends ACK, and the connection is established"
+    explanation: SYN → SYN-ACK → ACK. Closing uses FIN/ACK in each direction (a 4-way close). A server that sends RST instead of SYN-ACK means "nothing is listening on that port", which gives "connection refused".
+
+  - id: net-tcp-003
+    type: mcq
+    subtopic: tcp-udp
+    level: 1
+    prompt: Match the default ports. Which list is correct?
+    options:
+      - "SSH 22, DNS 53, HTTP 80, HTTPS 443, PostgreSQL 5432"
+      - "SSH 21, DNS 53, HTTP 8080, HTTPS 443, PostgreSQL 3306"
+      - "SSH 22, DNS 25, HTTP 80, HTTPS 8443, PostgreSQL 5432"
+      - "SSH 23, DNS 53, HTTP 80, HTTPS 443, PostgreSQL 1521"
+    correct: [0]
+    explanation: Worth memorizing. FTP 21, SSH 22, SMTP 25, DNS 53, HTTP 80, HTTPS 443, MySQL 3306, PostgreSQL 5432, Redis 6379, Kubernetes API 6443.
+
+  - id: net-tcp-004
+    type: mcq
+    subtopic: tcp-udp
+    level: 2
+    prompt: '`curl` to a server returns "Connection refused" immediately, while another server makes curl hang until "Connection timed out". What''s the most likely difference?'
+    options:
+      - "Refused: the host is reachable but nothing listens on that port (RST). Timed out: packets are being dropped, typically by a firewall or security group, or the host is down"
+      - "Refused means DNS failed; timed out means the TLS certificate is invalid"
+      - "Both mean the application crashed"
+      - "Refused means a firewall blocked it; timed out means nothing is listening"
+    correct: [0]
+    explanation: This is a classic triage hint. **Refused** means a fast RST, so the network path works but there's no listener (wrong port, the service is down, or it's bound to 127.0.0.1 only). **Timeout** means silence, so look at firewalls, security groups, NACLs or routing.
+
+  - id: net-tcp-005
+    type: open
+    subtopic: tcp-udp
+    level: 2
+    prompt: Your app listens on port 8080 and works with `curl localhost:8080` on the server, but not from another machine. What could be wrong?
+    rubric:
+      keyPoints:
+        - { text: "The app is bound to 127.0.0.1/localhost instead of 0.0.0.0 (check with ss -tlnp)", weight: 3 }
+        - { text: "A host firewall (iptables/nftables/ufw/firewalld) blocks the port", weight: 2 }
+        - { text: "A cloud security group / NACL doesn't allow the port from the source", weight: 2 }
+        - { text: "Routing / wrong IP used / NAT; test with curl -v, nc -zv, tcpdump", weight: 1 }
+    modelAnswer: |
+      First, I'd check what address it's bound to with `ss -tlnp | grep 8080`. If it says `127.0.0.1:8080`, it only accepts local connections and needs to listen on `0.0.0.0`. That's very common with dev servers and inside containers. If it's bound correctly, it's a firewall: the host firewall (ufw, firewalld, iptables) or, in the cloud, the security group or NACL. A timeout from the other machine points to a firewall, and "connection refused" points to the bind address. `nc -zv host 8080` and `tcpdump -i any port 8080` on the server show whether packets even arrive.
+    explanation: "Inside Docker, a process bound to 127.0.0.1 isn't reachable through `-p` port publishing either. Bind to 0.0.0.0 in containers."
+
+  # ---------- DNS ----------
+  - id: net-dns-001
+    type: open
+    subtopic: dns
+    level: 1
+    tags: [il-common]
+    prompt: Explain how DNS resolution works when your laptop looks up `www.example.com` for the first time.
+    rubric:
+      keyPoints:
+        - { text: "Check local caches first (browser/OS, /etc/hosts)", weight: 2 }
+        - { text: "Query goes to a recursive resolver (ISP/8.8.8.8/corporate DNS)", weight: 2 }
+        - { text: "Resolver asks a root server, which refers it to the .com TLD servers", weight: 2 }
+        - { text: "TLD servers refer it to the authoritative name servers for example.com", weight: 2 }
+        - { text: "Authoritative server returns the record (A/AAAA/CNAME); resolver caches it for the TTL and returns it", weight: 3 }
+    modelAnswer: |
+      First the browser and OS caches are checked, plus `/etc/hosts`. On a miss, the OS asks its configured recursive resolver, for example the ISP's, 8.8.8.8 or the corporate DNS. If the resolver has no cached answer, it walks the hierarchy. It asks a root server, which says "ask the .com servers". The .com TLD server says "ask example.com's authoritative name servers". The authoritative server returns the actual record, for example an A record with the IP, or a CNAME to follow. The resolver caches the answer for its TTL and returns it to the laptop, which caches it too.
+    explanation: "`dig +trace www.example.com` shows the whole walk. Caching at every level is why DNS changes take time to propagate, because of the TTL."
+    followUps: ["What's the difference between an A record and a CNAME?"]
+
+  - id: net-dns-002
+    type: mcq
+    subtopic: dns
+    level: 1
+    prompt: Which DNS record type maps a name to another **name** (an alias)?
+    options: ["CNAME", "A", "MX", "TXT"]
+    correct: [0]
+    explanation: "A maps a name to an IPv4 address, AAAA to IPv6, CNAME is an alias to another name, MX is mail servers, TXT holds arbitrary text (SPF, domain verification), NS is the name servers, PTR is reverse lookup. A CNAME can't sit at the zone apex; providers offer ALIAS/ANAME records for that."
+
+  - id: net-dns-003
+    type: command
+    subtopic: dns
+    level: 1
+    prompt: Query the A record of `api.example.com` using the resolver `8.8.8.8` specifically.
+    answers: ["dig @8.8.8.8 api.example.com A", "dig @8.8.8.8 api.example.com"]
+    patterns: ['^dig (?=.*@8\.8\.8\.8)(?=.*api\.example\.com).*$', '^nslookup api\.example\.com 8\.8\.8\.8$']
+    samples: ["dig api.example.com @8.8.8.8", "dig +short @8.8.8.8 api.example.com", "nslookup api.example.com 8.8.8.8"]
+    rejects: ["dig api.example.com", "ping api.example.com"]
+    explanation: "`dig @server name type`. `+short` prints only the answer. Comparing your local resolver with a public one quickly shows caching or split-horizon issues."
+
+  - id: net-dns-004
+    type: mcq
+    subtopic: dns
+    level: 2
+    prompt: You changed an A record 10 minutes ago but some users still reach the old IP. Why?
+    options:
+      - "Resolvers and clients cached the old record until its TTL expires"
+      - "DNS changes always take exactly 48 hours"
+      - "The A record must be deleted and recreated"
+      - "The users need to reboot their routers"
+    correct: [0]
+    explanation: "Records are cached for their TTL. Before a planned migration, lower the TTL (e.g. to 60s) a day in advance, then switch. `dig` shows the remaining TTL."
+
+  - id: net-dns-005
+    type: open
+    subtopic: dns
+    level: 2
+    prompt: '"It works with the IP but not with the hostname." How do you troubleshoot that?'
+    rubric:
+      keyPoints:
+        - { text: "Points to DNS resolution; test with dig/nslookup on the name", weight: 3 }
+        - { text: "Check the configured resolver (/etc/resolv.conf, systemd-resolved) and whether it's reachable", weight: 2 }
+        - { text: "Check /etc/hosts overrides and search domains", weight: 1 }
+        - { text: "Compare with a public resolver (dig @8.8.8.8) to tell local vs. record problems; check the record exists/TTL/propagation", weight: 2 }
+        - { text: "In Kubernetes: CoreDNS pods, service name / namespace FQDN", weight: 1 }
+    modelAnswer: |
+      If the IP works and the name doesn't, the network path is fine and it's name resolution. I'd run `dig name` to see what (if anything) it resolves to and which server answered. Then check `/etc/resolv.conf` (or `resolvectl status`) for the configured resolver and whether it's reachable, and `/etc/hosts` for a stale override. Then `dig @8.8.8.8 name`: if the public resolver answers correctly, my local resolver is the problem; if not, the record itself is missing or wrong. In Kubernetes I'd also check the CoreDNS pods and use the full name `svc.namespace.svc.cluster.local`.
+    explanation: "Classic triage: if the IP works, the problem is DNS. Don't forget negative caching, where a recent NXDOMAIN gets cached too."
+
+  # ---------- HTTP / TLS ----------
+  - id: net-http-001
+    type: mcq
+    subtopic: http
+    level: 1
+    tags: [il-common]
+    prompt: Which HTTP status code means the **gateway/proxy couldn't get a valid response from the upstream** server?
+    options: ["502 Bad Gateway", "500 Internal Server Error", "404 Not Found", "401 Unauthorized"]
+    correct: [0]
+    explanation: "2xx success, 3xx redirect, 4xx client error (400 bad request, 401 not authenticated, 403 forbidden, 404 not found, 429 too many requests), 5xx server error (500 app error, 502 bad gateway: the upstream crashed or refused, 503 unavailable: overloaded or no healthy backends, 504 gateway timeout: the upstream was too slow)."
+
+  - id: net-http-002
+    type: open
+    subtopic: http
+    level: 2
+    tags: [il-common]
+    prompt: What's the difference between 401, 403, 502, 503 and 504? What would you check for each?
+    rubric:
+      keyPoints:
+        - { text: "401: not authenticated (missing/invalid credentials or token)", weight: 2 }
+        - { text: "403: authenticated (or not needed) but not allowed: permissions/policy", weight: 2 }
+        - { text: "502: the proxy/LB got an invalid response or connection error from the upstream (app crashed, wrong port)", weight: 2 }
+        - { text: "503: service unavailable: no healthy backends, overloaded, maintenance", weight: 2 }
+        - { text: "504: the upstream didn't respond in time (timeout; slow app/DB)", weight: 2 }
+    modelAnswer: |
+      401 means "who are you?": no credentials or a bad token, so I'd check the auth header and token expiry. 403 means "I know who you are, but no": a permissions or policy issue, like IAM, RBAC or a WAF rule. The 5xx ones are on the server side behind a proxy. 502 means the proxy got a bad answer or a connection error from the backend, typically the app crashed or the proxy points at the wrong port, so I check the app is up and listening. 503 means no healthy backend is available or it's overloaded, so I check health checks and capacity. 504 means the backend was too slow, so I look at slow queries, dependencies and timeout settings.
+    explanation: These codes tell you which layer to look at. Always read the load balancer's own logs together with the app logs.
+
+  - id: net-http-003
+    type: order
+    subtopic: http
+    level: 2
+    prompt: Put a TLS 1.2 handshake (simplified) in order.
+    steps:
+      - "Client Hello: supported TLS versions, cipher suites, a random value, SNI (hostname)"
+      - "Server Hello + certificate chain"
+      - "Client verifies the certificate against trusted CAs and the hostname"
+      - "Key exchange: both sides derive the same session keys"
+      - "Finished messages; encrypted HTTP traffic flows with symmetric encryption"
+    explanation: Asymmetric crypto (the certificate and key exchange) is used to agree on symmetric session keys, which encrypt the actual data because symmetric encryption is fast. TLS 1.3 cuts this to a single round trip.
+
+  - id: net-http-004
+    type: open
+    subtopic: http
+    level: 2
+    prompt: How does HTTPS protect traffic, and what does the certificate actually prove?
+    rubric:
+      keyPoints:
+        - { text: "TLS provides encryption (confidentiality), integrity, and server authentication", weight: 3 }
+        - { text: "The certificate binds a domain name to a public key and is signed by a trusted CA", weight: 3 }
+        - { text: "Client checks the chain up to a trusted root CA, the hostname match, and validity dates", weight: 2 }
+        - { text: "Asymmetric crypto is used to agree on symmetric session keys used for the bulk data", weight: 2 }
+    modelAnswer: |
+      HTTPS is HTTP inside TLS. TLS gives three things: encryption, so nobody in the middle can read the traffic; integrity, so it can't be modified unnoticed; and authentication of the server. The certificate is a statement, signed by a certificate authority, that this public key belongs to this domain. The browser checks the signature chain up to a root CA it already trusts, that the hostname matches, and that it hasn't expired. During the handshake, the public key and key exchange are used to agree on symmetric session keys, which encrypt the actual data because that's much faster.
+    explanation: A certificate proves *identity*, not that the site is safe or honest. Let's Encrypt and cert-manager automate issuing and renewing them.
+
+  - id: net-http-005
+    type: command
+    subtopic: http
+    level: 1
+    prompt: Make a request to `https://api.example.com/health` and show the request and response headers, plus TLS details.
+    answers: ["curl -v https://api.example.com/health"]
+    patterns: ['^curl (.* )?(-v|--verbose|-\w*v\w*)( .*)? ''?https://api\.example\.com/health''?( .*)?$']
+    samples: ["curl -sv https://api.example.com/health", "curl --verbose https://api.example.com/health", "curl -v 'https://api.example.com/health'"]
+    rejects: ["curl https://api.example.com/health", "wget https://api.example.com/health"]
+    explanation: "`-v` shows DNS/connect, the TLS handshake and certificate, request headers and response headers. `-I` gets headers only (HEAD), `-L` follows redirects, `-k` skips cert verification (only for debugging!), and `-w '%{http_code} %{time_total}\\n'` prints timings."
+
+  - id: net-http-006
+    type: mcq
+    subtopic: http
+    level: 1
+    prompt: Which HTTP methods are **idempotent** (repeating them has the same effect as doing it once)? Select all.
+    options: ["GET", "PUT", "DELETE", "POST"]
+    correct: [0, 1, 2]
+    explanation: GET, PUT, DELETE, HEAD and OPTIONS are idempotent. POST isn't, because two POSTs can create two orders. That's why retries are safe for idempotent requests, while POSTs need idempotency keys.
+
+  # ---------- IP & subnetting ----------
+  - id: net-ip-001
+    type: mcq
+    subtopic: ip-subnetting
+    level: 1
+    tags: [il-common]
+    prompt: How many usable host addresses are in a `/24` network (e.g. 10.0.1.0/24)?
+    options: ["254", "256", "255", "512"]
+    correct: [0]
+    explanation: "/24 leaves 8 host bits, so 2^8 = 256 addresses, minus the network address (.0) and broadcast (.255) = 254. **AWS reserves 5 addresses per subnet**, so a /24 subnet in a VPC has 251 usable."
+
+  - id: net-ip-002
+    type: mcq
+    subtopic: ip-subnetting
+    level: 2
+    tags: [il-common]
+    prompt: Which of these addresses is inside `10.0.16.0/20`?
+    options: ["10.0.31.200", "10.0.32.1", "10.0.15.255", "10.1.16.4"]
+    correct: [0]
+    explanation: "/20 means the first 20 bits are fixed, so the third octet moves in blocks of 16. 10.0.16.0/20 covers 10.0.16.0 to 10.0.31.255. So 10.0.31.200 is in it, and 10.0.32.1 is the next block."
+
+  - id: net-ip-003
+    type: mcq
+    subtopic: ip-subnetting
+    level: 1
+    prompt: Which ranges are private (RFC 1918) IPv4 ranges? Select all.
+    options: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.0.0.0/8"]
+    correct: [0, 1, 2]
+    explanation: "Private ranges aren't routed on the internet and need NAT to get out. Others to know: 127.0.0.0/8 loopback, 169.254.0.0/16 link-local (the cloud metadata IP 169.254.169.254), and 100.64.0.0/10 carrier-grade NAT."
+
+  - id: net-ip-004
+    type: open
+    subtopic: ip-subnetting
+    level: 2
+    prompt: You need to split `10.0.0.0/16` into 4 equal subnets. What are they, and how many addresses does each have?
+    rubric:
+      keyPoints:
+        - { text: "Splitting into 4 needs 2 more bits: /18", weight: 3 }
+        - { text: "Subnets: 10.0.0.0/18, 10.0.64.0/18, 10.0.128.0/18, 10.0.192.0/18", weight: 3 }
+        - { text: "Each has 2^14 = 16,384 addresses (16,382 usable on-prem; minus 5 in AWS)", weight: 2 }
+    modelAnswer: |
+      Four subnets need 2 extra bits, so /16 becomes /18. Each /18 has 32 − 18 = 14 host bits, which is 16,384 addresses. In the third octet that's blocks of 64: 10.0.0.0/18, 10.0.64.0/18, 10.0.128.0/18 and 10.0.192.0/18. Usable hosts are 16,382, or 16,379 in AWS, which reserves 5 per subnet.
+    explanation: "A quick trick: the block size in the 'interesting' octet is 256 / 2^(extra bits within that octet). For /18 that's 64."
+
+  - id: net-ip-005
+    type: open
+    subtopic: ip-subnetting
+    level: 1
+    prompt: What is a subnet mask / CIDR prefix, and what does the default gateway do?
+    rubric:
+      keyPoints:
+        - { text: "The mask/prefix says how many bits are the network part vs host part (e.g. /24 = 255.255.255.0)", weight: 3 }
+        - { text: "Hosts in the same subnet talk directly (L2); others need a router", weight: 2 }
+        - { text: "Default gateway = the router the host sends traffic to for any destination outside its subnet", weight: 3 }
+    modelAnswer: |
+      The prefix length, like /24, says how many leading bits of the address are the network part. /24 is the mask 255.255.255.0, so 192.168.1.x are all on the same network. A host uses it to decide: if the destination is in my subnet, I send it directly on the local network (ARP for the MAC); if not, I send it to the default gateway, the router, which forwards it on. `ip route` shows the default route.
+    explanation: "`ip addr` shows addresses and prefixes, `ip route` shows routes. A wrong mask or gateway is a classic 'can reach the local network but not the internet' bug."
+
+  # ---------- Routing / NAT / firewalls ----------
+  - id: net-nat-001
+    type: open
+    subtopic: routing-nat
+    level: 2
+    prompt: What is NAT, and why do private servers in a cloud VPC need a NAT gateway?
+    rubric:
+      keyPoints:
+        - { text: "NAT rewrites source/destination IPs (and ports) as packets pass a router", weight: 2 }
+        - { text: "Lets many private IPs share one public IP to reach the internet (SNAT/masquerade)", weight: 3 }
+        - { text: "Private subnets have no public IPs/internet route, so outbound traffic (updates, APIs) goes via a NAT gateway in a public subnet", weight: 3 }
+        - { text: "NAT allows outbound-initiated connections only; the internet can't initiate connections in", weight: 2 }
+    modelAnswer: |
+      NAT, Network Address Translation, rewrites IP addresses as packets go through a router. The common case is source NAT: many machines with private IPs share one public IP, and the NAT device tracks connections so replies come back to the right machine. In a VPC, servers in private subnets have no public IP, so they can't reach the internet by themselves. You route their 0.0.0.0/0 traffic to a NAT gateway that sits in a public subnet. They can then download updates or call APIs, while nothing on the internet can open a connection to them. That's the security point.
+    explanation: "Inbound access to private servers goes through a load balancer or a bastion/SSM instead. Docker's default bridge networking uses NAT (iptables MASQUERADE) too."
+
+  - id: net-nat-002
+    type: mcq
+    subtopic: routing-nat
+    level: 2
+    prompt: What's the difference between a **stateful** and a **stateless** firewall?
+    options:
+      - "Stateful tracks connections, so return traffic for an allowed outbound connection is automatically allowed; stateless evaluates every packet independently, so you need rules for both directions"
+      - "Stateful firewalls only work at layer 7"
+      - "Stateless firewalls are always more secure"
+      - "There is no practical difference"
+    correct: [0]
+    explanation: "In AWS: **security groups are stateful**, **network ACLs are stateless** (you must also allow ephemeral return ports 1024-65535). iptables with conntrack is stateful."
+
+  # ---------- Load balancing ----------
+  - id: net-lb-001
+    type: open
+    subtopic: load-balancing
+    level: 1
+    tags: [il-common]
+    prompt: What does a load balancer do, and what's the difference between a forward proxy and a reverse proxy?
+    rubric:
+      keyPoints:
+        - { text: "A load balancer distributes traffic across multiple backends (algorithms: round robin, least connections, hashing)", weight: 2 }
+        - { text: "It health-checks backends and stops sending traffic to unhealthy ones", weight: 2 }
+        - { text: "Forward proxy acts on behalf of clients (e.g. corporate egress proxy, hides clients)", weight: 2 }
+        - { text: "Reverse proxy sits in front of servers on their behalf (nginx/LB/ingress): TLS termination, caching, routing, hides backends", weight: 3 }
+    modelAnswer: |
+      A load balancer spreads incoming requests over several backend servers, for example round-robin or least-connections. It health-checks them and takes failed ones out, which gives you scaling and high availability. A forward proxy sits in front of clients: a company's outbound proxy that filters and hides internal users. A reverse proxy sits in front of servers: clients talk to it thinking it's the site, and it forwards to the real backends. Nginx, an ALB or a Kubernetes ingress controller are reverse proxies. They usually terminate TLS and can route by path, cache and add headers. A load balancer is a kind of reverse proxy.
+    explanation: "Sticky sessions (session affinity) pin a client to one backend, often a sign the app isn't stateless."
+
+  # ---------- Troubleshooting ----------
+  - id: net-ts-001
+    type: open
+    subtopic: troubleshooting
+    level: 2
+    tags: [il-common]
+    prompt: A service on server A can't connect to a database on server B. How do you troubleshoot it, step by step?
+    rubric:
+      keyPoints:
+        - { text: "Read the exact error (refused vs timeout vs DNS vs auth) since it points to the layer", weight: 2 }
+        - { text: "DNS: does the hostname resolve to the right IP (dig/nslookup)?", weight: 2 }
+        - { text: "Reachability: ping/traceroute (if ICMP allowed); port test with nc -zv / telnet / curl", weight: 2 }
+        - { text: "On B: is the DB listening on the right interface/port (ss -tlnp), is it running", weight: 2 }
+        - { text: "Firewalls / security groups / NACLs on both sides, routing", weight: 2 }
+        - { text: "If connected: credentials, DB allowlist (pg_hba.conf), TLS requirements", weight: 1 }
+    modelAnswer: |
+      I go up the layers. First, the exact error message: DNS failure, connection refused, timeout and authentication failure each point somewhere different. Then DNS: does the hostname resolve to B's IP? Then reachability from A: `nc -zv dbhost 5432`, and ping or traceroute if ICMP is allowed. On B, is the database running and listening on the right interface, `ss -tlnp | grep 5432`, and not only on 127.0.0.1? If it's a timeout, I check firewalls on both sides: iptables/ufw, security groups, NACLs and route tables. If the TCP connection works but it still fails, it's the app layer: credentials, the DB's client allowlist like `pg_hba.conf`, or TLS settings. `tcpdump` on B shows whether packets arrive at all.
+    explanation: Work bottom-up and change one thing at a time. The error message alone often tells you the layer.
+
+  - id: net-ts-002
+    type: command
+    subtopic: troubleshooting
+    level: 1
+    prompt: Test whether TCP port 5432 on host `db.internal` is reachable, without installing a database client.
+    answers: ["nc -zv db.internal 5432"]
+    patterns: ['^nc -\w*z\w* (-w ?\d+ )?db\.internal 5432$', '^telnet db\.internal 5432$', '^nc (-w ?\d+ )?-\w*z\w* db\.internal 5432$']
+    samples: ["nc -vz db.internal 5432", "telnet db.internal 5432", "nc -z -v db.internal 5432", "nc -zv -w 3 db.internal 5432"]
+    rejects: ["ping db.internal", "nc db.internal"]
+    explanation: '`nc -z` (zero-I/O scan) plus `-v` (verbose) reports "succeeded" or "refused/timed out". Bash alone works too: `timeout 3 bash -c "</dev/tcp/db.internal/5432" && echo open`.'
+
+  - id: net-ts-003
+    type: mcq
+    subtopic: troubleshooting
+    level: 2
+    prompt: '`ping` to a server fails, but `curl https://server` works. What''s the most likely explanation?'
+    options:
+      - "ICMP is blocked by a firewall/security group, while TCP 443 is allowed"
+      - "The server's DNS record is wrong"
+      - "The TLS certificate is invalid"
+      - "The server is down"
+    correct: [0]
+    explanation: Ping uses ICMP, not TCP. Many networks and cloud security groups block ICMP by default. A failing ping doesn't prove the host is down; test the actual port.
+
+  - id: net-ts-004
+    type: command
+    subtopic: troubleshooting
+    level: 3
+    prompt: Capture traffic on any interface to or from port 443, without resolving names.
+    answers: ["tcpdump -i any -n port 443"]
+    patterns: ['^tcpdump (?=.*-\w*i ?any)(?=.*-\w*n)(?=.*(tcp )?port 443).*$']
+    samples: ["tcpdump -ni any port 443", "tcpdump -i any -nn port 443", "tcpdump -n -i any tcp port 443"]
+    rejects: ["tcpdump port 443", "tcpdump -i eth0"]
+    explanation: '`-i any` covers all interfaces, `-n` skips DNS lookups, `port 443` is the filter. Add `-w file.pcap` to open it in Wireshark later, or `host 10.0.1.5` to filter by host.'
+
+  # ---------- URL flow ----------
+  - id: net-url-001
+    type: open
+    subtopic: url-flow
+    level: 2
+    tags: [il-common]
+    prompt: What happens when you type `https://www.google.com` into a browser and press Enter? Go as deep as you can.
+    rubric:
+      keyPoints:
+        - { text: "Browser parses the URL; checks cache/HSTS", weight: 1 }
+        - { text: "DNS resolution (caches → recursive resolver → root/TLD/authoritative) to get an IP", weight: 3 }
+        - { text: "TCP connection to port 443 (3-way handshake); routing via default gateway/ARP/NAT", weight: 2 }
+        - { text: "TLS handshake: certificate verification, session keys", weight: 3 }
+        - { text: "HTTP request (GET /, Host header, cookies); hits load balancers/CDN/reverse proxies, then app servers", weight: 2 }
+        - { text: "Response (status, headers, HTML); browser parses, fetches more resources (CSS/JS/images), renders", weight: 2 }
+    modelAnswer: |
+      The browser parses the URL and checks its caches and HSTS list. It needs an IP, so it resolves the name with DNS: browser and OS cache, then the recursive resolver, which (if needed) walks root, the .com TLD and Google's authoritative servers. With the IP, the OS opens a TCP connection to port 443. That's the SYN/SYN-ACK/ACK handshake, with the packets going out through the default gateway, usually NAT on the home router. Then the TLS handshake: the server sends its certificate, the browser verifies the chain and hostname, and they agree on session keys. Now the browser sends an encrypted HTTP request, `GET /` with the Host header and cookies. On Google's side it hits edge load balancers and reverse proxies, then the application servers. The response comes back with a status, headers and HTML. The browser parses it, makes more requests for CSS, JS and images (often reusing the connection, with HTTP/2 or HTTP/3), and renders the page.
+    explanation: The most common screening question in Israel. Show structure (DNS → TCP → TLS → HTTP → server side → rendering) and go deep on whichever part the interviewer probes.
+    followUps: ["Where could caching happen along the way?", "What changes with HTTP/3?"]
+
+  # ---------- Added: basics ----------
+  - id: net-models-003
+    type: mcq
+    subtopic: models
+    level: 1
+    prompt: At which layers do a **switch** and a **router** usually work?
+    options:
+      - "Switch at L2 (forwards by MAC address); router at L3 (forwards by IP address)"
+      - "Switch at L3; router at L2"
+      - "Both at L7"
+      - "Switch at L4 (ports); router at L1 (cables)"
+    correct: [0]
+    explanation: "A switch connects devices on the same local network using MAC addresses. A router connects different networks and decides where IP packets go next. A home router is also a switch, a NAT box and a DHCP server."
+
+  - id: net-tcp-006
+    type: mcq
+    subtopic: tcp-udp
+    level: 1
+    prompt: What is a port number, in a sentence?
+    options:
+      - "A number (0–65535) that tells the host which application or service should get the traffic"
+      - "The physical socket where you plug the network cable"
+      - "Another name for an IP address"
+      - "The speed of the network connection"
+    correct: [0]
+    explanation: "The IP address finds the machine, and the port finds the program on it. Ports below 1024 are \"well-known\" and need root to listen on (22 SSH, 80 HTTP, 443 HTTPS). A connection is identified by source IP and port plus destination IP and port."
+
+  - id: net-tcp-007
+    type: mcq
+    subtopic: tcp-udp
+    level: 1
+    prompt: Which transport protocol and port do normal DNS queries use?
+    options: ["UDP 53 (TCP 53 for large answers and zone transfers)", "TCP 80", "UDP 443", "TCP 22"]
+    correct: [0]
+    explanation: "Most DNS queries are small, so a single UDP packet is fast. TCP is used when the answer is too big or for zone transfers. A firewall that blocks UDP 53 breaks name resolution."
+
+  - id: net-dns-006
+    type: mcq
+    subtopic: dns
+    level: 1
+    prompt: What does the file `/etc/hosts` do?
+    options:
+      - "Maps host names to IP addresses locally, and is usually checked before DNS"
+      - "Lists the DNS servers the machine uses"
+      - "Stores the machine's own IP address"
+      - "Blocks hosts from connecting"
+    correct: [0]
+    explanation: "A line like `10.0.1.5 db.internal` makes that name resolve on this machine only. Handy for testing, and a classic cause of \"it works only on my machine\". The DNS servers are in `/etc/resolv.conf`."
+
+  - id: net-dns-007
+    type: command
+    subtopic: dns
+    level: 1
+    prompt: Print only the IP address(es) that `example.com` resolves to, without the rest of dig's output.
+    answers: ["dig +short example.com"]
+    patterns: ['^dig \+short example\.com( A)?$', '^dig example\.com( A)? \+short$']
+    samples: ["dig example.com +short", "dig +short example.com A"]
+    rejects: ["dig example.com", "ping example.com"]
+    explanation: "`+short` prints only the answer, which is handy in scripts. Without it, dig also shows the TTL, which server answered and how long it took."
+
+  - id: net-http-007
+    type: mcq
+    subtopic: http
+    level: 1
+    prompt: In a REST API, which HTTP method is normally used to **create** a new item?
+    options: ["POST", "GET", "DELETE", "HEAD"]
+    correct: [0]
+    explanation: "GET reads, POST creates, PUT replaces (or creates at a known URL), PATCH changes part of an item, and DELETE removes it. A GET should never change data."
+
+  - id: net-http-008
+    type: command
+    subtopic: http
+    level: 1
+    prompt: Show only the response headers of `https://example.com`, without the page body.
+    answers: ["curl -I https://example.com"]
+    patterns: ["^curl -\\w*I\\w* '?https://example\\.com/?'?$", "^curl --head '?https://example\\.com/?'?$"]
+    samples: ["curl -sI https://example.com", "curl --head https://example.com", "curl -I https://example.com/"]
+    rejects: ["curl https://example.com", "curl -v https://example.com"]
+    explanation: "`-I` sends a HEAD request and prints the status line and headers. Quick way to check a status code, a redirect (`Location`) or cache headers. `-L` follows redirects."
+
+  - id: net-ip-006
+    type: mcq
+    subtopic: ip-subnetting
+    level: 1
+    prompt: What is `127.0.0.1`?
+    options:
+      - "The loopback address (localhost): traffic to it never leaves the machine"
+      - "The default gateway of every network"
+      - "A public Google DNS server"
+      - "The broadcast address"
+    correct: [0]
+    explanation: "A service that listens on 127.0.0.1 is reachable only from the same machine. To accept connections from other machines it must listen on `0.0.0.0` (all addresses) or on a real interface IP."
+
+  - id: net-ip-007
+    type: command
+    subtopic: ip-subnetting
+    level: 1
+    prompt: Show the IP addresses of the network interfaces on this Linux machine.
+    answers: ["ip addr"]
+    patterns: ['^ip (a|addr|address)( show)?$', '^ifconfig( -a)?$', '^hostname -I$']
+    samples: ["ip a", "ip address show", "ifconfig", "hostname -I"]
+    rejects: ["ip route", "ping localhost"]
+    explanation: "`ip addr` (short: `ip a`) shows each interface with its addresses and prefix, like `inet 10.0.1.5/24`. `ifconfig` is the older tool. `ip -br a` gives a short table."
+
+  - id: net-ip-008
+    type: mcq
+    subtopic: ip-subnetting
+    level: 2
+    prompt: How many addresses are in a `/28` subnet?
+    options: ["16 (14 usable, 11 in AWS)", "28", "256", "8"]
+    correct: [0]
+    explanation: "32 − 28 = 4 host bits, and 2^4 = 16. Take away the network and broadcast addresses and 14 are left. AWS reserves 5, so 11. /28 is the smallest subnet AWS allows."
+
+  - id: net-nat-003
+    type: command
+    subtopic: routing-nat
+    level: 1
+    prompt: Show this machine's routing table, including the default gateway.
+    answers: ["ip route"]
+    patterns: ['^ip (r|route)( show)?$', '^route -n$', '^netstat -(rn|nr)$']
+    samples: ["ip r", "ip route show", "route -n", "netstat -rn"]
+    rejects: ["ip addr", "traceroute 8.8.8.8"]
+    explanation: "The line `default via 10.0.1.1 dev eth0` is the default gateway: where packets go when no other route matches. No default route means no internet."
+
+  - id: net-nat-004
+    type: mcq
+    subtopic: routing-nat
+    level: 1
+    prompt: A cloud firewall (security group) has an inbound rule "TCP 22 from 0.0.0.0/0". What does that mean?
+    options:
+      - "Any IP address on the internet can try to connect to SSH on this server"
+      - "Only machines in the same VPC can use SSH"
+      - "SSH is blocked"
+      - "The server can make outbound SSH connections only"
+    correct: [0]
+    explanation: "`0.0.0.0/0` means \"every IPv4 address\". For SSH that invites constant brute-force attempts. Limit it to your office or VPN IP, or use a bastion or AWS SSM instead."
+
+  - id: net-lb-002
+    type: mcq
+    subtopic: load-balancing
+    level: 1
+    prompt: A load balancer's health check fails for one of three backend servers. What happens?
+    options:
+      - "The LB stops sending new requests to that server until its health check passes again"
+      - "The LB restarts the server"
+      - "The LB sends it more traffic to warm it up"
+      - "All three servers are taken out"
+    correct: [0]
+    explanation: "The LB only routes to healthy targets. Fixing or replacing the server is someone else's job (an auto scaling group, Kubernetes or you). If every target fails, users usually get 502 or 503."
+
+  - id: net-ts-005
+    type: mcq
+    subtopic: troubleshooting
+    level: 1
+    prompt: What does `traceroute` (or `tracepath` / `mtr`) show?
+    options:
+      - "Each router (hop) the packets pass through on the way to the destination, with the delay to each"
+      - "Which ports are open on the destination"
+      - "The DNS records of the destination"
+      - "The bandwidth of your connection"
+    correct: [0]
+    explanation: "It shows where along the path packets stop or slow down. Rows of `* * *` can just mean a router doesn't answer, not that it's broken. `mtr` combines ping and traceroute and keeps updating."
+
+  - id: net-url-002
+    type: order
+    subtopic: url-flow
+    level: 1
+    tags: [il-common]
+    prompt: Put the main steps of opening `https://shop.example.com` in a browser in order.
+    steps:
+      - "DNS lookup turns the name into an IP address"
+      - "TCP connection to port 443 (3-way handshake)"
+      - "TLS handshake: the certificate is checked and keys are agreed"
+      - "The browser sends the HTTP request (GET /)"
+      - "The server answers, and the browser renders the page and loads its CSS, JS and images"
+    explanation: "DNS → TCP → TLS → HTTP → render. This is the skeleton of the most common screening question. Learn it first, then add details to each step."

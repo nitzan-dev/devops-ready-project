@@ -1,0 +1,652 @@
+topic: linux
+questions:
+  # ---------- Filesystem & files ----------
+  - id: linux-fhs-001
+    type: mcq
+    subtopic: fhs-files
+    level: 1
+    tags: [il-common]
+    prompt: Where do system-wide configuration files usually live on Linux?
+    options: ["/etc", "/var", "/usr/bin", "/opt"]
+    correct: [0]
+    explanation: |
+      `/etc` holds host-specific configuration (`/etc/ssh/sshd_config`, `/etc/fstab`, `/etc/hosts`). `/var` is variable data such as logs and spools, `/usr/bin` holds user programs, and `/opt` is for add-on software packages.
+
+  - id: linux-fhs-002
+    type: mcq
+    subtopic: fhs-files
+    level: 1
+    prompt: An application keeps writing logs and the disk fills up. Which directory is the most likely culprit?
+    options: ["/var/log", "/tmp", "/etc", "/boot"]
+    correct: [0]
+    explanation: |
+      `/var/log` holds logs. Without log rotation (`logrotate`) or retention in journald, it grows until the disk is full. `du -sh /var/log/*` shows what's big.
+
+  - id: linux-fhs-003
+    type: open
+    subtopic: fhs-files
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between a hard link and a soft (symbolic) link?
+    rubric:
+      keyPoints:
+        - { text: "A hard link is another directory entry pointing to the same inode (same data)", weight: 3 }
+        - { text: "A symlink is a separate file that stores a path to the target", weight: 3 }
+        - { text: "Deleting the original breaks a symlink, but a hard link still works (data stays until the last link is removed)", weight: 2 }
+        - { text: "Hard links can't cross filesystems or (normally) point to directories; symlinks can", weight: 2 }
+      redFlags:
+        - "Says a hard link is a copy of the file"
+    modelAnswer: |
+      A hard link is just another name for the same inode, so both names point to the same data, and the data is only freed when the last link is removed. You can't hard-link across filesystems or to directories. A symbolic link is a small separate file that contains a path to the target. If the target is deleted or moved, the symlink dangles. Symlinks can point anywhere, including directories and other filesystems. You create them with `ln` and `ln -s`.
+    explanation: |
+      `ls -li` shows the inode number and link count. Two hard links share an inode number; a symlink has its own inode and shows `->` to its target.
+    followUps: ["What is an inode, and what does it store?"]
+
+  - id: linux-fhs-004
+    type: command
+    subtopic: fhs-files
+    level: 1
+    prompt: Create a symbolic link called `current` that points to the directory `releases/v2`.
+    answers: ["ln -s releases/v2 current", "ln -sfn releases/v2 current"]
+    patterns: ['^ln -s\w* releases/v2/? current$']
+    samples: ["ln -s releases/v2/ current", "ln -sf releases/v2 current"]
+    rejects: ["ln releases/v2 current", "ln -s current releases/v2"]
+    explanation: |
+      `ln -s TARGET LINK_NAME`. The target comes first. `-f` replaces an existing link, and `-n` treats an existing symlink to a directory as a file, which matters for atomic "switch release" deploys.
+
+  - id: linux-fhs-005
+    type: command
+    subtopic: fhs-files
+    level: 2
+    tags: [il-common]
+    prompt: Find all files bigger than 100 MB under `/var`.
+    answers: ["find /var -type f -size +100M"]
+    patterns: ['^find /var( -xdev)?( -type f)? -size \+100M( -type f)?']
+    samples: ["find /var -size +100M", "find /var -size +100M -type f", "find /var -type f -size +100M -exec ls -lh {} +"]
+    rejects: ["find /var -size 100M", "find / -size +100M"]
+    explanation: |
+      `-size +100M` means "more than 100 MiB". Add `-type f` for regular files only, and `-xdev` to stay on one filesystem. To show sizes: `find /var -type f -size +100M -exec ls -lh {} +`.
+
+  # ---------- Permissions ----------
+  - id: linux-perm-001
+    type: open
+    subtopic: permissions
+    level: 1
+    tags: [il-common]
+    prompt: Explain what `chmod 754 script.sh` does.
+    rubric:
+      keyPoints:
+        - { text: "Three digits are owner, group, others", weight: 3 }
+        - { text: "Each digit is a sum of read=4, write=2, execute=1", weight: 3 }
+        - { text: "Owner rwx (7), group r-x (5), others r-- (4)", weight: 3 }
+    modelAnswer: |
+      The three digits set permissions for the owner, the group and everyone else. Each digit is read (4) plus write (2) plus execute (1). So 7 means rwx for the owner, 5 means r-x for the group (read and run, no write), and 4 means r-- for others (read only). `ls -l` would show `-rwxr-xr--`.
+    explanation: Octal mode is the sum of r=4, w=2, x=1 for each of user, group and other.
+    followUps: ["What does the execute bit mean on a directory?"]
+
+  - id: linux-perm-002
+    type: mcq
+    subtopic: permissions
+    level: 2
+    prompt: What does the execute (`x`) permission mean on a **directory**?
+    options:
+      - "You can enter it (`cd`) and access files inside it by name"
+      - "You can list the files in it"
+      - "You can run every script inside it"
+      - "You can create files in it"
+    correct: [0]
+    explanation: |
+      On directories: `r` lets you list the names, `w` lets you create, delete or rename entries (with `x`), and `x` lets you traverse it, meaning `cd` into it and access an entry by name. Without `x`, `cd` fails even if you have `r`.
+
+  - id: linux-perm-003
+    type: open
+    subtopic: permissions
+    level: 2
+    prompt: What are the SUID bit and the sticky bit? Give a real example of each.
+    rubric:
+      keyPoints:
+        - { text: "SUID on an executable runs it with the file owner's privileges (often root)", weight: 3 }
+        - { text: "Example: /usr/bin/passwd is SUID root so users can update /etc/shadow", weight: 2 }
+        - { text: "Sticky bit on a directory: only a file's owner (or root) can delete or rename it, even if others can write to the directory", weight: 3 }
+        - { text: "Example: /tmp (drwxrwxrwt)", weight: 2 }
+        - { text: "SUID binaries are a security risk; keep them to a minimum", weight: 1 }
+    modelAnswer: |
+      SUID on an executable makes it run with the owner's privileges instead of the caller's. `passwd` is owned by root with SUID, so a normal user can update `/etc/shadow` through it. It shows as an `s` in the owner execute slot. The sticky bit on a directory means that even if everyone can write there, only the owner of a file (or root) can delete or rename it. `/tmp` is the classic example, shown as `t` in `drwxrwxrwt`. SUID binaries are a common privilege-escalation target, so you audit them.
+    explanation: "Special bits: SUID=4000, SGID=2000, sticky=1000, e.g. `chmod 1777 /tmp`. Find SUID files with `find / -perm -4000 -type f`."
+
+  - id: linux-perm-004
+    type: command
+    subtopic: permissions
+    level: 1
+    prompt: Change the owner of `/srv/app` and everything inside it to user `deploy` and group `www-data`.
+    answers: ["chown -R deploy:www-data /srv/app"]
+    patterns: ['^chown -R deploy[:.]www-data /srv/app/?$']
+    samples: ["chown -R deploy.www-data /srv/app", "chown -R deploy:www-data /srv/app/"]
+    rejects: ["chown deploy:www-data /srv/app", "chmod -R deploy:www-data /srv/app"]
+    explanation: "`chown user:group path`, with `-R` for recursive. `chgrp` changes only the group."
+
+  - id: linux-perm-005
+    type: mcq
+    subtopic: permissions
+    level: 2
+    prompt: With a umask of `022`, what permissions does a newly created regular file get?
+    options: ["644 (rw-r--r--)", "755 (rwxr-xr-x)", "022", "600 (rw-------)"]
+    correct: [0]
+    explanation: |
+      Files start from 666 and directories from 777, then the umask bits are removed. 666 − 022 = 644 for files, and 777 − 022 = 755 for directories. New files never get execute by default.
+
+  # ---------- Users ----------
+  - id: linux-users-001
+    type: mcq
+    subtopic: users
+    level: 1
+    prompt: Which file stores the password **hashes** on a modern Linux system?
+    options: ["/etc/shadow", "/etc/passwd", "/etc/group", "/etc/sudoers"]
+    correct: [0]
+    explanation: |
+      `/etc/passwd` is world-readable and holds the user, UID, GID, home and shell, with an `x` placeholder for the password. The hashes are in `/etc/shadow`, which only root can read.
+
+  - id: linux-users-002
+    type: command
+    subtopic: users
+    level: 1
+    prompt: Add the existing user `dana` to the supplementary group `docker` without removing her other groups.
+    answers: ["usermod -aG docker dana", "gpasswd -a dana docker"]
+    patterns: ['^usermod -(aG|Ga|a -G) docker dana$']
+    samples: ["usermod -a -G docker dana"]
+    rejects: ["usermod -G docker dana"]
+    explanation: |
+      `-G` sets the supplementary groups, and **without `-a` it replaces all of them**, which is a classic mistake. The user must log in again (or run `newgrp docker`) for it to take effect.
+
+  - id: linux-users-003
+    type: open
+    subtopic: users
+    level: 2
+    prompt: What's the difference between `su` and `sudo`? Why do companies prefer `sudo`?
+    rubric:
+      keyPoints:
+        - { text: "su switches to another user (default root) and needs THAT user's password", weight: 2 }
+        - { text: "sudo runs a single command as another user using YOUR OWN password, based on rules in /etc/sudoers", weight: 3 }
+        - { text: "sudo gives fine-grained control (who can run which commands)", weight: 2 }
+        - { text: "sudo logs every command (audit trail) and avoids sharing the root password", weight: 2 }
+    modelAnswer: |
+      `su` switches you to another user, root by default, and asks for that user's password. `sudo` runs a command as another user after checking `/etc/sudoers`, and it asks for your own password. Companies prefer sudo because nobody has to share the root password, you can allow specific commands for specific users or groups, and every command is logged, so you have an audit trail. Edit the rules with `visudo`, which checks the syntax.
+    explanation: Least privilege plus accountability. `sudo -i` or `sudo su -` gives a root shell when it's really needed.
+
+  # ---------- Processes ----------
+  - id: linux-proc-001
+    type: open
+    subtopic: processes
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between a process and a thread?
+    rubric:
+      keyPoints:
+        - { text: "A process is a running program with its own isolated memory/address space and resources", weight: 3 }
+        - { text: "Threads are units of execution inside a process and share its memory and resources", weight: 3 }
+        - { text: "Threads are cheaper to create and switch, but a bug in one thread can affect the whole process; processes are isolated", weight: 2 }
+        - { text: "Each process has a PID; threads share the PID (have their own TIDs)", weight: 1 }
+    modelAnswer: |
+      A process is an instance of a running program with its own memory space, file descriptors and PID. The OS isolates processes from each other. A thread is a unit of execution inside a process. A process can have many threads, and they share its memory and open files but each has its own stack and registers. Threads are lighter to create and communicate through shared memory, which is fast but needs locking. Processes are heavier but isolated, so one crashing doesn't take down the others.
+    explanation: "In Linux both are tasks created with `clone()`; threads just share more. `ps -eLf` or `top -H` shows threads."
+
+  - id: linux-proc-002
+    type: open
+    subtopic: processes
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between `kill -15` and `kill -9`? Which should you try first, and why?
+    rubric:
+      keyPoints:
+        - { text: "-15 is SIGTERM: asks the process to terminate; it can catch it and shut down gracefully", weight: 3 }
+        - { text: "-9 is SIGKILL: the kernel kills it immediately; it can't be caught or ignored", weight: 3 }
+        - { text: "Try SIGTERM first so it can clean up (close files/connections, flush data); SIGKILL as a last resort", weight: 3 }
+        - { text: "Kubernetes and Docker send SIGTERM, then SIGKILL after a grace period", weight: 1 }
+    modelAnswer: |
+      `kill -15` sends SIGTERM, which politely asks the process to exit. The program can catch it, finish in-flight work, close connections and flush data. `kill -9` sends SIGKILL. The kernel stops the process immediately, and it can't be caught, so there's no cleanup and you risk corrupted state. Always start with SIGTERM and wait a few seconds, and only use SIGKILL if the process won't die. Docker and Kubernetes do the same: SIGTERM, then SIGKILL after the grace period.
+    explanation: "`kill` with no signal sends SIGTERM (15). A process stuck in uninterruptible sleep (state D) can't be killed even with -9 until its I/O returns."
+    followUps: ["What is a zombie process and how do you get rid of it?"]
+
+  - id: linux-proc-003
+    type: open
+    subtopic: processes
+    level: 2
+    prompt: What is a zombie process? How do you get rid of one?
+    rubric:
+      keyPoints:
+        - { text: "A process that has exited but whose parent hasn't read its exit status (wait()) yet", weight: 3 }
+        - { text: "It uses no CPU/memory, only a process table entry; shows as state Z / <defunct>", weight: 2 }
+        - { text: "You can't kill a zombie; you fix or signal/kill the parent so it reaps it, or init/systemd adopts and reaps it", weight: 3 }
+        - { text: "Many zombies indicate a buggy parent and can exhaust PIDs", weight: 1 }
+    modelAnswer: |
+      A zombie is a process that has finished, but its parent hasn't called `wait()` to collect the exit status, so it stays in the process table as `<defunct>` with state Z. It doesn't use CPU or memory, just a PID. You can't kill a zombie because it's already dead. You get the parent to reap it (send it SIGCHLD or fix the bug), or kill the parent, so the zombie is re-parented to PID 1, which reaps it. A few zombies are harmless, but thousands can exhaust PIDs. In containers this is why you use a proper init like `tini`.
+    explanation: "`ps -eo pid,ppid,stat,cmd | grep -w Z` lists zombies with their parent PID."
+
+  - id: linux-proc-004
+    type: command
+    subtopic: processes
+    level: 1
+    prompt: Show every process on the system with its user, PID, CPU and memory usage (BSD style).
+    answers: ["ps aux", "ps -ef"]
+    patterns: ['^ps (aux|-aux|axu|-ef|-eF|-ely)$']
+    samples: ["ps axu"]
+    rejects: ["ps", "top -p 1"]
+    explanation: "`ps aux` (BSD syntax) shows USER, PID, %CPU, %MEM, VSZ, RSS, STAT and COMMAND. `ps -ef` (System V syntax) shows UID, PID, PPID and CMD."
+
+  - id: linux-proc-005
+    type: command
+    subtopic: processes
+    level: 2
+    tags: [il-common]
+    prompt: Which process is listening on TCP port 8080? Show it with one command.
+    answers: ["ss -tlnp", "lsof -i :8080", "ss -ltnp 'sport = :8080'", "netstat -tlnp"]
+    patterns: ['^(ss|netstat) -\w*(?=\w*l)(?=\w*p)\w*( \| grep (-w )?:?8080)?$', '^lsof -i ?(tcp)?:8080( -sTCP:LISTEN)?$', '^fuser( -v)? 8080/tcp$']
+    samples: ["ss -tlnp | grep 8080", "lsof -i :8080", "netstat -tulpn | grep :8080", "fuser 8080/tcp", "ss -lntp"]
+    rejects: ["ps aux | grep 8080", "ping 8080"]
+    explanation: |
+      `ss -tlnp` lists TCP (`-t`) listening (`-l`) sockets with numeric ports (`-n`) and the owning process (`-p`, needs root to see other users' processes). `lsof -i :8080` works too. `netstat` is the older tool.
+
+  - id: linux-proc-006
+    type: mcq
+    subtopic: processes
+    level: 2
+    prompt: You start a long job over SSH and want it to keep running after you disconnect. Which options work? (Select all that apply.)
+    options: ["`nohup ./job.sh &`", "Run it inside `tmux` or `screen`", "Run it as a systemd service or `systemd-run`", "`./job.sh &` and then close the terminal"]
+    correct: [0, 1, 2]
+    explanation: |
+      When the SSH session ends, the shell sends SIGHUP to its jobs. `nohup` ignores SIGHUP, tmux/screen keep a session alive on the server, and systemd runs it outside your session. A plain `&` background job usually dies with the terminal (unless you `disown` it).
+
+  # ---------- Performance ----------
+  - id: linux-perf-001
+    type: open
+    subtopic: performance
+    level: 2
+    tags: [il-common]
+    prompt: What does "load average" mean on Linux? On a 4-core machine, is a load average of 6 a problem?
+    rubric:
+      keyPoints:
+        - { text: "Average number of processes running or waiting (runnable + uninterruptible I/O wait, state D) over 1, 5 and 15 minutes", weight: 3 }
+        - { text: "Must be compared to the number of CPU cores", weight: 3 }
+        - { text: "6 on 4 cores means more demand than CPUs: work is queuing (about 50% overloaded), so it's worth investigating", weight: 2 }
+        - { text: "High load with low CPU usage usually means I/O wait (disk/NFS), not CPU", weight: 2 }
+        - { text: "Look at the trend (1 vs 15 min) and tools like top, vmstat, iostat", weight: 1 }
+      redFlags:
+        - "Says load average is the CPU usage percentage"
+    modelAnswer: |
+      Load average is the average number of tasks that are either running or waiting to run. On Linux that also includes tasks stuck in uninterruptible I/O. You get three numbers: the 1, 5 and 15 minute averages. You read it relative to the core count. On 4 cores, a load of 4 means fully busy, and 6 means about two tasks are always waiting, so yes, it's worth a look. Check whether it's rising (1-minute higher than 15-minute), then use `top` or `vmstat`. If CPU usage is low but load is high, it's usually I/O wait (a slow disk or NFS), not CPU.
+    explanation: "`uptime` or `cat /proc/loadavg` shows it, and `nproc` gives the core count. In `top`, the `wa` value is I/O wait."
+    followUps: ["What would you check if load is high but CPU is idle?"]
+
+  - id: linux-perf-002
+    type: mcq
+    subtopic: performance
+    level: 2
+    prompt: '`free -h` shows only 200 MB "free" but 5 GB "available" on an 8 GB server. What does that mean?'
+    options:
+      - "Linux is using spare RAM for the page cache; that memory is reclaimed when apps need it, so the server is fine"
+      - "The server is about to run out of memory"
+      - "There's a memory leak in the kernel"
+      - "Swap is full"
+    correct: [0]
+    explanation: |
+      Unused RAM is wasted RAM, so Linux fills it with the disk cache (buff/cache). **available** estimates how much memory apps can get without swapping, and it's the number to watch. Low "free" alone is normal.
+
+  - id: linux-perf-003
+    type: open
+    subtopic: performance
+    level: 2
+    tags: [il-common]
+    prompt: A Linux server is "slow". Walk me through how you'd investigate it.
+    rubric:
+      keyPoints:
+        - { text: "Clarify the symptom and scope first (what is slow, since when, one server or all, recent changes/deploys)", weight: 2 }
+        - { text: "Check load and CPU: uptime, top/htop (us, sy, wa, steal), which processes", weight: 3 }
+        - { text: "Check memory and swap: free -h, OOM kills in dmesg/journal, swapping (vmstat si/so)", weight: 2 }
+        - { text: "Check disk: df -h for full disks, iostat/iotop for I/O wait and saturation", weight: 2 }
+        - { text: "Check network: latency/errors, connections (ss), DNS", weight: 1 }
+        - { text: "Check application logs and metrics/dashboards to correlate", weight: 2 }
+    modelAnswer: |
+      First I'd clarify the symptom: what's slow, since when, is it one server or many, and did anything change, like a deploy. Then I'd go through resources. `uptime` and `top` for load and CPU, including whether it's user CPU, system CPU, I/O wait or steal, and which process is busy. `free -h` and `vmstat 1` for memory and swapping, and `dmesg` or `journalctl -k` for OOM kills. `df -h` for a full disk and `iostat -x 1` or `iotop` for disk saturation. `ss -s` and ping/curl timing for the network. In parallel I'd check the application logs and the monitoring dashboards to see when it started and what it correlates with.
+    explanation: This is the USE method (Utilization, Saturation, Errors) applied to CPU, memory, disk and network. Interviewers want a structured approach, not a random list of commands.
+
+  - id: linux-perf-004
+    type: order
+    subtopic: performance
+    level: 2
+    prompt: Order these first steps when a production server suddenly becomes slow (most sensible first).
+    steps:
+      - "Confirm the symptom and check what changed recently (deploys, traffic)"
+      - "Check load and CPU with uptime / top"
+      - "Check memory and swap with free -h / vmstat"
+      - "Check disk space and I/O with df -h / iostat"
+      - "Dig into the specific process's logs and metrics"
+    explanation: Start broad (what changed, which resource is saturated), then narrow down to the culprit. Jumping straight into one log file often wastes time.
+
+  - id: linux-perf-005
+    type: mcq
+    subtopic: performance
+    level: 3
+    prompt: In `top`, the CPU line shows `wa` at 60%. What does that suggest?
+    options:
+      - "CPUs are idle waiting for disk/network I/O to complete; storage is likely the bottleneck"
+      - "60% of CPU is used by user processes"
+      - "The hypervisor is stealing CPU time"
+      - "The kernel is busy handling system calls"
+    correct: [0]
+    explanation: "`wa` is I/O wait, `us` is user, `sy` is system, and `st` is steal (a noisy neighbor on a VM). High `wa` points to a slow or overloaded disk; check it with `iostat -x 1` or `iotop`."
+
+  # ---------- systemd ----------
+  - id: linux-systemd-001
+    type: command
+    subtopic: systemd
+    level: 1
+    prompt: Show the last 100 log lines of the `nginx` service and keep following new lines.
+    answers: ["journalctl -u nginx -n 100 -f", "journalctl -fu nginx -n 100"]
+    patterns: ['^journalctl (?=.*-u ?nginx)(?=.*(-n ?100|--lines[= ]100))(?=.*(-\w*f|--follow)).*']
+    samples: ["journalctl -u nginx -f -n 100", "journalctl -fu nginx -n 100", "journalctl -u nginx --lines=100 --follow"]
+    rejects: ["journalctl -u nginx", "tail -f nginx"]
+    explanation: "`-u` picks the unit, `-n` sets the number of lines, `-f` follows. Also handy: `--since \"10 min ago\"`, `-p err`, `-b` (this boot)."
+
+  - id: linux-systemd-002
+    type: open
+    subtopic: systemd
+    level: 1
+    prompt: What's the difference between `systemctl enable` and `systemctl start`?
+    rubric:
+      keyPoints:
+        - { text: "start runs the service now (current boot only)", weight: 3 }
+        - { text: "enable makes it start automatically at boot (creates the symlinks for the target, e.g. multi-user.target)", weight: 3 }
+        - { text: "They're independent; use enable --now to do both", weight: 2 }
+    modelAnswer: |
+      `systemctl start` starts the service right now, but it won't come back after a reboot. `systemctl enable` hooks the unit into a boot target (it creates a symlink under `multi-user.target.wants`), so it starts on every boot, but it doesn't start it now. They're independent, so for a new service you usually run `systemctl enable --now myapp`.
+    explanation: "`systemctl status`, `is-enabled` and `is-active` show the state. After editing a unit file, run `systemctl daemon-reload`."
+
+  - id: linux-systemd-003
+    type: mcq
+    subtopic: systemd
+    level: 2
+    prompt: You edited `/etc/systemd/system/myapp.service`. What must you run before restarting it?
+    options: ["systemctl daemon-reload", "systemctl reboot", "systemctl reset-failed", "systemctl enable myapp"]
+    correct: [0]
+    explanation: "systemd caches unit files, so `daemon-reload` re-reads them. Then `systemctl restart myapp`."
+
+  # ---------- Disks ----------
+  - id: linux-disk-001
+    type: open
+    subtopic: disks
+    level: 2
+    tags: [il-common]
+    prompt: '`df -h` shows the disk is only 60% full, but you get "No space left on device". What could cause that?'
+    rubric:
+      keyPoints:
+        - { text: "Inodes are exhausted (many small files); check with df -i", weight: 3 }
+        - { text: "A deleted file is still held open by a process, so the space isn't freed; check lsof +L1 / lsof | grep deleted, restart the process", weight: 2 }
+        - { text: "Writing to a different, full filesystem/mount than the one you checked (or a full partition such as /tmp or a container overlay)", weight: 1 }
+        - { text: "Explains what an inode is (metadata entry per file; a fixed number per filesystem)", weight: 1 }
+    modelAnswer: |
+      The most common cause is running out of inodes. Every file uses one, and the number is fixed when the filesystem is created, so millions of tiny files (cache, sessions, mail queue) can exhaust them while bytes are still free. `df -i` shows it, and the fix is to delete those files. Another classic is a big file that was deleted while a process still has it open: the space isn't released until the process closes it. `lsof +L1` finds those, and restarting the process frees the space. Finally, check you're looking at the right mount, because the write may be going to a different, full filesystem.
+    explanation: "Inodes store metadata (owner, permissions, timestamps, block pointers), but not the file name; names live in directory entries."
+    followUps: ["How would you find which directory has the most files?"]
+
+  - id: linux-disk-002
+    type: command
+    subtopic: disks
+    level: 1
+    prompt: Show the size of each item in `/var/log`, human-readable, so you can spot what's using space.
+    answers: ["du -sh /var/log/*", "du -h --max-depth=1 /var/log"]
+    patterns: ['^du -\w*(?=\w*s)(?=\w*h)\w* /var/log/\*( \| sort -\w*h\w*)?$', '^du -\w*h\w* (--max-depth=1|-d ?1) /var/log/?( \| sort -\w*h\w*)?$']
+    samples: ["du -sh /var/log/* | sort -h", "du -hs /var/log/*", "du -h -d1 /var/log"]
+    rejects: ["df -h /var/log", "ls -l /var/log"]
+    explanation: "`du -sh dir/*` gives a summary per item. Pipe it to `sort -h` to sort human-readable sizes. `df` shows free space per filesystem, not per directory. `ncdu` is a nice interactive tool."
+
+  - id: linux-disk-003
+    type: mcq
+    subtopic: disks
+    level: 2
+    prompt: Which file defines filesystems that are mounted automatically at boot?
+    options: ["/etc/fstab", "/etc/mtab", "/proc/mounts", "/etc/mounts.conf"]
+    correct: [0]
+    explanation: "`/etc/fstab` is the boot-time mount table. `/proc/mounts` (and `/etc/mtab`, a link to it) shows what's mounted right now. Test fstab changes with `mount -a` before rebooting."
+
+  # ---------- Packages ----------
+  - id: linux-pkg-001
+    type: mcq
+    subtopic: packages
+    level: 1
+    prompt: Which package managers belong to which distro family? Pick the correct pair.
+    options: ["apt/dpkg → Debian/Ubuntu; dnf/yum/rpm → RHEL/CentOS/Fedora", "apt → RHEL; yum → Ubuntu", "apk → Ubuntu; apt → Alpine", "pacman → Debian; dnf → Arch"]
+    correct: [0]
+    explanation: "Debian and Ubuntu use `apt` (on top of `dpkg`). RHEL, Rocky and Fedora use `dnf`/`yum` (on top of `rpm`). Alpine, common in containers, uses `apk`."
+
+  - id: linux-pkg-002
+    type: command
+    subtopic: packages
+    level: 1
+    prompt: On Ubuntu, refresh the package index and install `curl` without an interactive prompt.
+    answers: ["apt-get update && apt-get install -y curl", "apt update && apt install -y curl"]
+    patterns: ['^apt(-get)? update ?(&&|;) ?apt(-get)? install -y curl$', '^apt(-get)? update ?(&&|;) ?apt(-get)? -y install curl$']
+    samples: ["apt-get update && apt-get -y install curl", "apt update; apt install -y curl"]
+    rejects: ["apt install curl", "yum install -y curl"]
+    explanation: Always update the index first (in a Dockerfile, in the same RUN layer), and use `-y` for non-interactive installs.
+
+  # ---------- SSH ----------
+  - id: linux-ssh-001
+    type: open
+    subtopic: ssh
+    level: 1
+    tags: [il-common]
+    prompt: How does SSH key-based authentication work, and why is it better than passwords?
+    rubric:
+      keyPoints:
+        - { text: "You generate a key pair; the private key stays on your machine, the public key goes into ~/.ssh/authorized_keys on the server", weight: 3 }
+        - { text: "The server checks you hold the private key via a challenge/signature; the private key is never sent", weight: 3 }
+        - { text: "Better: immune to password guessing/brute force, no reusable secret sent over the wire, can be passphrase-protected, easy to revoke per key", weight: 2 }
+        - { text: "Best practice: disable password and root login in sshd_config", weight: 1 }
+    modelAnswer: |
+      You create a key pair with `ssh-keygen`. The private key stays on your laptop, ideally protected by a passphrase, and the public key is added to `~/.ssh/authorized_keys` on the server, for example with `ssh-copy-id`. When you connect, the server sends a challenge that only the holder of the private key can sign, and it verifies the signature with the public key. The private key never leaves your machine. It's much stronger than passwords: nothing can be brute-forced or phished, nothing reusable crosses the network, and you can revoke one key without affecting anyone else. On servers you then set `PasswordAuthentication no` and `PermitRootLogin no`.
+    explanation: "Typical permission errors: `~/.ssh` must be 700 and `authorized_keys` 600, or sshd ignores them."
+    followUps: ["You get 'Permission denied (publickey)'. What do you check?"]
+
+  - id: linux-ssh-002
+    type: command
+    subtopic: ssh
+    level: 1
+    prompt: Generate a new Ed25519 SSH key pair with the comment `dana@laptop`.
+    answers: ["ssh-keygen -t ed25519 -C dana@laptop"]
+    patterns: ["^ssh-keygen (?=.*-t ed25519)(?=.*-C '?dana@laptop'?).*$"]
+    samples: ["ssh-keygen -C 'dana@laptop' -t ed25519", "ssh-keygen -t ed25519 -C dana@laptop -f ~/.ssh/id_ed25519"]
+    rejects: ["ssh-keygen", "ssh-keygen -t rsa"]
+    explanation: Ed25519 keys are short, fast and secure, and they're the modern default. Use `-f` to pick the file name.
+
+  - id: linux-ssh-003
+    type: mcq
+    subtopic: ssh
+    level: 2
+    prompt: Which `sshd_config` settings harden an internet-facing server? (Select all that apply.)
+    options: ["`PasswordAuthentication no`", "`PermitRootLogin no`", "`PermitEmptyPasswords yes`", "`AllowUsers deploy`"]
+    correct: [0, 1, 3]
+    explanation: Use keys only, no direct root login, and an allowlist of users. Add fail2ban or a firewall restricting port 22 to known IPs or a VPN/bastion. Reload with `systemctl reload sshd` while keeping your current session open in case you lock yourself out.
+
+  # ---------- Boot ----------
+  - id: linux-boot-001
+    type: order
+    subtopic: boot
+    level: 2
+    prompt: Put the Linux boot process in order.
+    steps:
+      - "BIOS/UEFI firmware runs POST and finds a boot device"
+      - "Bootloader (GRUB) loads the kernel and initramfs"
+      - "Kernel initializes hardware and mounts the root filesystem"
+      - "PID 1 (systemd) starts"
+      - "systemd starts services to reach the default target"
+    explanation: "Firmware → bootloader → kernel (+ initramfs) → init (systemd, PID 1) → units and targets → login. `systemd-analyze blame` shows what slowed the boot."
+
+  - id: linux-boot-002
+    type: mcq
+    subtopic: boot
+    level: 2
+    prompt: What is PID 1 on most modern Linux distributions, and why does it matter?
+    options:
+      - "systemd: the init process that starts and supervises all services and adopts orphaned processes"
+      - "The kernel itself"
+      - "bash: the first shell"
+      - "sshd: so you can log in"
+    correct: [0]
+    explanation: PID 1 is the first user-space process. It starts everything else, reaps orphans and handles signals specially. In containers, your app often *is* PID 1, which is why signal handling and zombie reaping matter there.
+
+  # ---------- cron ----------
+  - id: linux-cron-001
+    type: mcq
+    subtopic: scheduling
+    level: 1
+    prompt: "What does the cron schedule `*/15 2 * * 1-5` mean?"
+    options:
+      - "Every 15 minutes during the 02:00 hour, Monday to Friday"
+      - "At 02:15 every day"
+      - "Every 2 hours, 15 minutes past, on weekends"
+      - "Every 15 hours on the 2nd of each month"
+    correct: [0]
+    explanation: "The fields are minute, hour, day-of-month, month and day-of-week. `*/15` in the minute field means 0, 15, 30, 45. Hour 2 means 02:xx. `1-5` is Monday to Friday. crontab.guru is great for checking."
+
+  - id: linux-cron-002
+    type: open
+    subtopic: scheduling
+    level: 2
+    prompt: A script works when you run it by hand but fails from cron. What are the usual reasons?
+    rubric:
+      keyPoints:
+        - { text: "cron runs with a minimal environment: different PATH and missing env vars, so use absolute paths or set PATH/vars", weight: 3 }
+        - { text: "Different working directory (relative paths break)", weight: 2 }
+        - { text: "Runs as a different user / permissions", weight: 1 }
+        - { text: "No output visible: redirect stdout/stderr to a log file (or check mail/journal) to debug", weight: 2 }
+        - { text: "Missing shebang/execute permission or % characters needing escaping in crontab", weight: 1 }
+    modelAnswer: |
+      Cron runs jobs with a tiny environment: a minimal PATH, none of your shell profile, and often a different working directory and user. So commands found in your interactive shell aren't found, env vars are missing, and relative paths break. The fix is absolute paths for commands and files, setting PATH or sourcing an env file at the top, and `cd` to the right directory. To see what's actually happening, redirect output, `>> /var/log/myjob.log 2>&1`, and check `grep CRON /var/log/syslog` or the journal. Also check the shebang, the execute bit, and escape `%` in the crontab line.
+    explanation: In 2026 you'd often use a systemd timer instead, which gives you logging in journald and dependency handling for free.
+
+  - id: linux-fhs-006
+    type: command
+    subtopic: fhs-files
+    level: 1
+    prompt: Show the full path of the directory you're currently in.
+    answers: ["pwd"]
+    samples: []
+    rejects: ["ls", "cd"]
+    explanation: "`pwd` = print working directory. `cd -` goes back to the previous directory, `cd ~` (or just `cd`) goes home."
+
+  - id: linux-fhs-007
+    type: mcq
+    subtopic: fhs-files
+    level: 1
+    prompt: What does `ls -la` show that plain `ls` doesn't?
+    options:
+      - "Hidden files (starting with a dot) and details: permissions, owner, size, date"
+      - "Only directories"
+      - "Files sorted by size"
+      - "The contents of every file"
+    correct: [0]
+    explanation: "`-l` is the long format and `-a` includes hidden files like `.env` and `.ssh`. Add `-h` for human-readable sizes."
+
+  - id: linux-fhs-008
+    type: command
+    subtopic: fhs-files
+    level: 1
+    prompt: Show the last 50 lines of `/var/log/syslog`.
+    answers: ["tail -n 50 /var/log/syslog", "tail -50 /var/log/syslog"]
+    patterns: ['^tail (-n ?50|-50|--lines[= ]50) /var/log/syslog$']
+    samples: ["tail --lines=50 /var/log/syslog"]
+    rejects: ["head -n 50 /var/log/syslog", "cat /var/log/syslog"]
+    explanation: "`tail` shows the end of a file, `head` the start. `tail -f` keeps following new lines; `less` lets you scroll and search."
+
+  - id: linux-perm-006
+    type: command
+    subtopic: permissions
+    level: 1
+    prompt: Make the script `deploy.sh` executable for its owner.
+    answers: ["chmod u+x deploy.sh", "chmod +x deploy.sh"]
+    patterns: ['^chmod (u\+x|\+x|7[0-7][0-7]|a\+x) deploy\.sh$']
+    samples: ["chmod 755 deploy.sh", "chmod a+x deploy.sh"]
+    rejects: ["chmod 644 deploy.sh", "chown +x deploy.sh"]
+    explanation: "Without the execute bit you get 'Permission denied' when running `./deploy.sh`. `chmod +x` adds it for everyone; `u+x` only for the owner."
+
+  - id: linux-users-004
+    type: command
+    subtopic: users
+    level: 1
+    prompt: Show which user you are logged in as and which groups you belong to.
+    answers: ["id"]
+    patterns: ['^(id|whoami ?(&&|;) ?groups)$']
+    samples: ["whoami && groups"]
+    rejects: ["who", "users"]
+    explanation: "`id` shows your UID, primary group and all groups. `whoami` only shows the name."
+
+  - id: linux-proc-007
+    type: mcq
+    subtopic: processes
+    level: 1
+    prompt: What's the difference between running `./server &` and `./server` in a shell?
+    options:
+      - "With & it runs in the background and you get the prompt back; without it, it runs in the foreground and holds the terminal"
+      - "& runs it with root permissions"
+      - "& runs it twice"
+      - "There's no difference"
+    correct: [0]
+    explanation: "`jobs` lists background jobs, `fg` brings one back, Ctrl+Z pauses the foreground job and `bg` resumes it in the background."
+
+  - id: linux-perf-006
+    type: command
+    subtopic: performance
+    level: 1
+    prompt: Show how much memory is used and available, in human-readable units.
+    answers: ["free -h"]
+    patterns: ['^free -\w*h\w*$']
+    samples: ["free -mh"]
+    rejects: ["df -h", "top -h"]
+    explanation: "Look at the 'available' column, not 'free'. Linux uses spare RAM for disk cache and gives it back when apps need it."
+
+  - id: linux-perf-007
+    type: open
+    subtopic: performance
+    level: 2
+    prompt: A process is using 100% CPU. How do you find it, and what can you do about it?
+    rubric:
+      keyPoints:
+        - { text: "Find it with top/htop (sort by CPU) or ps aux --sort=-%cpu", weight: 3 }
+        - { text: "Identify what it is and whether the load is expected (a backup job, a traffic spike) or a bug (infinite loop)", weight: 2 }
+        - { text: "Look at its logs / threads (top -H) / what it's doing (strace, application metrics)", weight: 2 }
+        - { text: "Act: lower priority (renice), limit with cgroups/limits, restart gracefully, scale out, or fix the bug", weight: 2 }
+    modelAnswer: |
+      I'd run `top` (or `htop`) and sort by CPU, or `ps aux --sort=-%cpu | head`, to see which process it is and who owns it. Then I'd ask whether that's expected: a nightly backup or a traffic spike is normal, a web app stuck at 100% with no traffic smells like a bug, like an infinite loop. Its logs and metrics usually tell me more, and `top -H` shows which thread is busy. Then I act: if it's a batch job hurting others, lower its priority with `renice` or limit it; if it's a real overload, scale out; if it's a bug, restart it gracefully to recover and get the bug fixed.
+    explanation: "In containers, a CPU limit throttles the process instead of letting it take the whole machine."
+
+  - id: linux-disk-004
+    type: command
+    subtopic: disks
+    level: 1
+    prompt: Show free and used disk space for all mounted filesystems, human-readable.
+    answers: ["df -h"]
+    patterns: ['^df -\w*h\w*$']
+    samples: ["df -hT"]
+    rejects: ["du -h", "free -h"]
+    explanation: "`df` works per filesystem; `du` measures directories and files. `df -i` shows inode usage."
+
+  - id: linux-ssh-004
+    type: command
+    subtopic: ssh
+    level: 1
+    prompt: Copy the local file `app.tar.gz` to the `/tmp` directory on server `10.0.1.5` as user `deploy`.
+    answers: ["scp app.tar.gz deploy@10.0.1.5:/tmp", "scp app.tar.gz deploy@10.0.1.5:/tmp/"]
+    patterns: ['^(scp|rsync -\w*) app\.tar\.gz deploy@10\.0\.1\.5:/tmp/?$']
+    samples: ["rsync -avz app.tar.gz deploy@10.0.1.5:/tmp/"]
+    rejects: ["scp deploy@10.0.1.5:/tmp app.tar.gz", "ssh deploy@10.0.1.5 app.tar.gz"]
+    explanation: "`scp source destination`; a remote path is `user@host:path`. `rsync` is better for big or repeated copies because it only sends the differences."
+
+  - id: linux-systemd-004
+    type: command
+    subtopic: systemd
+    level: 1
+    prompt: Check whether the `nginx` service is running and see its latest log lines.
+    answers: ["systemctl status nginx"]
+    samples: []
+    rejects: ["systemctl start nginx", "service nginx"]
+    explanation: "`status` shows active/inactive, the main PID, memory and the last log lines. For more logs use `journalctl -u nginx`."

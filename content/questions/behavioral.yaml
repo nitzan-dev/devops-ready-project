@@ -1,0 +1,134 @@
+topic: behavioral
+questions:
+  - id: beh-intro-001
+    type: open
+    subtopic: intro
+    level: 1
+    tags: [il-common]
+    prompt: Tell me about yourself. (Answer as you would at the start of a junior DevOps interview, in about 90 seconds.)
+    rubric:
+      keyPoints:
+        - { text: "Short present → past → future structure (who you are now, relevant background, why this role)", weight: 3 }
+        - { text: "Highlights relevant hands-on DevOps experience (course project: Kubernetes, Terraform, CI/CD, GitOps, monitoring)", weight: 3 }
+        - { text: "Shows motivation and learning attitude, ties it to the company/role", weight: 2 }
+        - { text: "Concise (not a life story), confident, no irrelevant details", weight: 2 }
+    modelAnswer: |
+      I'm currently finishing a DevOps course, where I built a complete production-style platform for a web app I wrote: Terraform creates a Kubernetes cluster with ingress, TLS, Prometheus and Grafana monitoring, and Argo CD, and GitHub Actions runs CI with tests and security scanning, then delivers through GitOps to staging and production. Before that I [your background in one sentence, e.g. worked in IT support / studied X / developed Y], which is where I got hooked on automating things and understanding how systems run in production. What I enjoy most is the troubleshooting side: figuring out why something broke and making sure it can't break the same way again. I'm looking for a junior DevOps role where I can learn from an experienced team, own real infrastructure, and grow, and this team's work on [something specific about the company] is exactly that.
+    explanation: "Present → past → future, 60-90 seconds. Prepare it, but don't recite it word for word. Fill in your own background in the brackets."
+
+  - id: beh-intro-002
+    type: open
+    subtopic: intro
+    level: 1
+    prompt: Why do you want to work in DevOps?
+    rubric:
+      keyPoints:
+        - { text: "Genuine, specific motivation (automation, reliability, seeing the whole system, bridging dev and ops)", weight: 3 }
+        - { text: "Backs it with a concrete experience (something you built/fixed and enjoyed)", weight: 3 }
+        - { text: "Understands what the job really is (on-call, troubleshooting, collaboration, continuous learning)", weight: 2 }
+    modelAnswer: |
+      I like working on the whole system rather than one piece of it: how code becomes a running service, and how that service stays healthy. In my course project, the moments I enjoyed most were automating something that used to take manual steps, like getting the whole cluster created by one Terraform apply, and debugging problems across layers, like a NetworkPolicy issue that only appeared after the Docker VM slept. I know DevOps also means on-call, troubleshooting under pressure and constantly learning new tools, and that's part of what attracts me. I like that the impact is visible: a faster pipeline or a better alert makes the whole engineering team's life better.
+    explanation: Avoid "because it pays well" or "because it's in demand". Show curiosity and a concrete example.
+
+  - id: beh-story-001
+    type: open
+    subtopic: stories
+    level: 2
+    tags: [il-common]
+    prompt: Tell me about a time you had to learn a new technology quickly. (Use the STAR format.)
+    rubric:
+      keyPoints:
+        - { text: "Situation and Task are clear and brief", weight: 2 }
+        - { text: "Action: concrete learning approach (docs, small experiments, building something, asking for help)", weight: 3 }
+        - { text: "Result: specific outcome (it worked, measurable if possible)", weight: 3 }
+        - { text: "Reflection: what you'd do differently / what you learned about learning", weight: 2 }
+    modelAnswer: |
+      _(Example only. Interviewers can tell when a story is made up, so use a true story of your own with the same structure.)_
+      **Situation:** for my course project I had to deliver with GitOps, and I had never used Argo CD. **Task:** within about a week, get staging and production deploying automatically from Git, with promotion between them. **Action:** I read the official getting-started docs and installed Argo CD on my kind cluster with a single Application to understand sync and health. Then I read about the app-of-apps pattern and rebuilt it as a root Application creating staging and prod from the same Helm chart with different values. I broke things on purpose, like deleting a deployment by hand, to see self-heal work, and I asked in the course forum when the AppProject permissions confused me. **Result:** both environments deploy from Git, a release is a commit and a rollback is a revert, and I demoed it live in class. **What I learned:** start from the smallest working example, then add one concept at a time.
+    explanation: STAR is Situation, Task, Action, Result. Spend most of the time on Action and Result. Have 4-5 stories ready and adapt them to the question.
+
+  - id: beh-story-002
+    type: open
+    subtopic: stories
+    level: 2
+    prompt: Tell me about a mistake you made and what you learned from it.
+    rubric:
+      keyPoints:
+        - { text: "Owns a real mistake (not a fake 'I work too hard')", weight: 3 }
+        - { text: "Explains the impact honestly and what they did to fix it quickly", weight: 2 }
+        - { text: "Concrete lesson and a change in process/behavior to prevent recurrence", weight: 3 }
+        - { text: "Blameless, calm tone; shows accountability", weight: 2 }
+    modelAnswer: |
+      _(Example only. Interviewers can tell when a story is made up, so use a true story of your own with the same structure.)_
+      While setting up my cluster I ran a Terraform change without reading the plan carefully, and it replaced a resource instead of updating it, which wiped my Grafana setup and the Prometheus data I'd collected for a demo. I fixed it by restoring the dashboards from the chart, since they were code, and re-ran the load test to regenerate data. The lessons: always read the plan, especially lines marked "forces replacement"; anything I care about should be defined as code so it can be recreated; and the right fix was a process change, not "be more careful". Now I check plans for replacements before applying, and I keep demo data reproducible with a script.
+    explanation: "Interviewers want accountability plus a systemic fix. Customize this with a true story of your own."
+
+  - id: beh-story-003
+    type: open
+    subtopic: stories
+    level: 2
+    prompt: Tell me about a time you disagreed with a teammate. How did you handle it?
+    rubric:
+      keyPoints:
+        - { text: "Respectful: sought to understand the other view first", weight: 2 }
+        - { text: "Used data/experiments/criteria instead of opinions", weight: 3 }
+        - { text: "Reached a decision (even if not theirs) and committed to it", weight: 3 }
+        - { text: "Positive relationship afterwards; what they learned", weight: 2 }
+    modelAnswer: |
+      _(Example only. Interviewers can tell when a story is made up, so use a true story of your own with the same structure.)_
+      In a course group project, a teammate wanted to deploy straight from the CI pipeline with `helm upgrade`, and I wanted GitOps with Argo CD. Instead of arguing, I asked what mattered most to them, which was simplicity and speed, and I explained my concerns: storing cluster credentials in CI, and having no record of what's deployed. We agreed to try both quickly and compare them against those criteria. The CI approach was simpler to start, but GitOps gave us rollback by revert and drift correction, which we needed for the demo. They agreed to go with GitOps, and I made sure to write a clear README for it so it wasn't extra complexity for them. We still work well together, and I learned that agreeing on criteria first defuses most disagreements.
+    explanation: Show that you listen, decide on facts and commit. Never badmouth the other person.
+
+  - id: beh-intro-003
+    type: open
+    subtopic: intro
+    level: 1
+    prompt: What is your biggest weakness?
+    rubric:
+      keyPoints:
+        - { text: "Names a real, work-related weakness (not a disguised strength like 'I work too hard')", weight: 3 }
+        - { text: "Gives a short concrete example of how it showed up", weight: 2 }
+        - { text: "Explains what they're actively doing to improve, with a result if possible", weight: 3 }
+        - { text: "Short, honest and calm; the weakness isn't a core requirement of the job", weight: 2 }
+    modelAnswer: |
+      _(Example only. Use a weakness that is really yours.)_
+      I tend to dig into a problem on my own for too long before asking for help. In my course project I spent most of a day on a Terraform provider issue that a classmate had already solved. Now I give myself a time box: if I'm stuck for about an hour without progress, I write down what I've tried and ask. It actually makes my questions better, because I can explain exactly where I'm stuck, and I get unblocked much faster.
+    explanation: "Weakness → example → what you do about it. Avoid weaknesses that disqualify you for the role (like \"I don't like troubleshooting\")."
+
+  - id: beh-intro-004
+    type: open
+    subtopic: intro
+    level: 1
+    tags: [il-common]
+    prompt: At the end of the interview you're asked, "Do you have any questions for us?" What would you ask?
+    rubric:
+      keyPoints:
+        - { text: "Always has 2-3 prepared questions; never says 'no questions'", weight: 3 }
+        - { text: "Asks about the work: team, stack, how deployments and on-call work, biggest current challenge", weight: 2 }
+        - { text: "Asks about growth: onboarding for juniors, mentoring, what success looks like in the first 3 months", weight: 3 }
+        - { text: "Doesn't open with salary or vacation; questions show interest in this specific company", weight: 2 }
+    modelAnswer: |
+      I'd have three or four ready and pick the ones not already answered:
+      - "What does a typical week look like for a junior on the team?"
+      - "How do you deploy to production today, and what would you like to improve about it?"
+      - "How does on-call work, and when would a junior join it?"
+      - "What would success look like for me after three months?"
+      - "What's the biggest infrastructure challenge the team is dealing with right now?"
+      Salary and benefits I'd leave for the HR stage.
+    explanation: "Good questions show you're thinking about doing the job, not just getting it. The answers also help you decide whether you want the job."
+
+  - id: beh-story-004
+    type: open
+    subtopic: stories
+    level: 2
+    prompt: Tell me about a time you had to deal with a problem under time pressure. (Use the STAR format.)
+    rubric:
+      keyPoints:
+        - { text: "Clear, brief Situation and Task, including what was at stake and the deadline", weight: 2 }
+        - { text: "Action: stayed calm, prioritized (stop the damage first), communicated with others", weight: 3 }
+        - { text: "Result: concrete outcome, delivered on time or a clear recovery", weight: 3 }
+        - { text: "Lesson and what was changed afterwards so it doesn't repeat", weight: 2 }
+    modelAnswer: |
+      _(Example only. Use a true story of your own with the same structure.)_
+      **Situation:** the morning of my project demo, the app in my cluster stopped responding. **Task:** get it working within about two hours. **Action:** I didn't start changing things at random. I checked from the outside in: the URL gave a timeout, the ingress and the pods looked healthy, and testing pod to pod showed that traffic was being blocked. That pointed at NetworkPolicy, and I found stale policy state after Docker Desktop had slept. I told my instructor what was going on and how long I expected it to take. **Result:** I fixed it within an hour and the demo went fine. **Lesson:** I added a `make` target and a runbook entry, so next time it's a one-command fix.
+    explanation: "Under pressure, interviewers want to hear: calm, a structured approach, communication, and a fix that prevents a repeat."

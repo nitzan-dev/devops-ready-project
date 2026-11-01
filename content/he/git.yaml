@@ -1,0 +1,264 @@
+topic: git
+questions:
+  git-basics-001:
+    prompt: הסבירו את שלושת האזורים ב-Git (working directory, staging area, repository). מה עושים `git add` ו-`git commit`?
+    keyPoints:
+      - "working directory: הקבצים כמו שהם עכשיו, בזמן שאתם עורכים"
+      - "staging area: מה שמכינים ל-commit הבא; git add מכניס לשם שינויים"
+      - "repository (התיקייה .git): ההיסטוריה השמורה; git commit שומר את מה שב-staging עם הודעה"
+      - "git push שולח את ה-commits לשרת; עד אז הכל רק אצלכם במחשב"
+    modelAnswer: |
+      ב-Git יש שלושה אזורים.
+      **working directory:** הקבצים שאתם עורכים עכשיו.
+      **staging area:** "סל" של שינויים ל-commit הבא. `git add file` מכניס לסל את הגרסה הנוכחית של הקובץ, וכך בוחרים בדיוק מה ייכנס.
+      **repository:** ההיסטוריה השמורה, בתיקייה `.git`. `git commit` לוקח את מה שבסל ושומר אותו לתמיד, עם הודעה, שם הכותב והפניה ל-commit הקודם.
+      עד כאן הכל נמצא רק אצלכם במחשב. `git push` שולח את ה-commits לשרת, למשל GitHub.
+    explanation: "`git status` מראה את שלושת האזורים. `git diff` מראה שינויים שעוד לא בסל, ו-`git diff --staged` מראה מה שכבר בסל."
+
+  git-basics-002:
+    prompt: מה ההבדל בין `git fetch` ל-`git pull`?
+    options:
+      - "fetch מוריד commits חדשים מהשרת בלי לגעת ב-branch שלכם; pull = fetch ואז merge (או rebase) ל-branch הנוכחי"
+      - "pull מוריד רק tags"
+      - "fetch מוחק שינויים מקומיים"
+      - "הם זהים"
+    explanation: '`git fetch` תמיד בטוח: הוא רק מוריד, ואפשר לבדוק את `origin/main` לפני שמשלבים. `git pull --rebase` חוסך commits מיותרים של merge.'
+
+  git-basics-003:
+    prompt: הציגו את היסטוריית ה-commits, שורה קצרה אחת לכל commit.
+    explanation: "`--oneline` מציג את ה-hash המקוצר ואת שורת הכותרת. עם `--graph --all` רואים את ה-branches וה-merges כעץ."
+
+  git-basics-004:
+    prompt: מה עושה `git clone`?
+    options: ["מעתיק repository מהשרת למחשב שלכם, כולל כל ההיסטוריה", "יוצר repository ריק", "מעתיק רק את הקבצים העדכניים בלי היסטוריה", "מעלה את הקוד שלכם ל-GitHub"]
+    explanation: "`git clone URL` מוריד את כל ה-repository ומגדיר את השרת בשם `origin`. `git init` יוצר repository ריק."
+
+  git-basics-005:
+    prompt: מה זה `origin` ב-Git?
+    options: ["השם המקובל של השרת (remote) שממנו עשיתם clone", "ה-commit הראשון ב-repository", "ה-branch הראשי", "tag מיוחד"]
+    explanation: "`origin` הוא רק כינוי לכתובת של שרת. `git remote -v` מציג את כל השרתים, ו-`origin/main` הוא העותק המקומי שלכם של ה-main שבשרת."
+
+  git-basics-006:
+    prompt: מה זה commit ב-Git, ומה הופך commit לטוב?
+    keyPoints:
+      - "commit הוא צילום שמור של הפרויקט, עם כותב, הודעה והפניה ל-commit הקודם"
+      - "מזהים אותו לפי hash (SHA)"
+      - "commit טוב הוא קטן ומתמקד בשינוי אחד"
+      - "הודעה ברורה שאומרת מה השתנה ולמה"
+      - "לא שובר את הבנייה, ואין בו סודות או קבצים שנוצרו אוטומטית"
+    modelAnswer: |
+      commit הוא צילום שמור של כל הפרויקט ברגע מסוים. יש לו כותב, תאריך, הודעה, והפניה ל-commit הקודם. מזהים אותו לפי hash, ולכן אי אפשר לשנות היסטוריה בשקט.
+      commit טוב הוא קטן ועושה דבר אחד. קל לבדוק אותו וקל לבטל אותו.
+      ההודעה אומרת מה השתנה ולמה. למשל "Fix readiness probe path for api", ולא "fixes".
+      והוא לא שובר את הבנייה, ואין בו סודות או קבצי build.
+    explanation: "הרבה צוותים משתמשים ב-Conventional Commits (`feat:`, `fix:`, `chore:`), וכך אפשר לייצר רשימת שינויים ומספרי גרסאות אוטומטית."
+
+  git-branch-001:
+    prompt: מה ההבדל בין `git merge` ל-`git rebase`? מתי לא עושים rebase?
+    keyPoints:
+      - "merge מאחד branches עם commit של merge, ושומר את ההיסטוריה כמו שהייתה"
+      - "rebase מעתיק את ה-commits שלכם מעל branch אחר (עם hashes חדשים) ונותן היסטוריה ישרה"
+      - "לא עושים rebase ל-commits שאחרים כבר משכו (branch משותף); זה משכתב היסטוריה ומחייב force push"
+      - "שימוש נפוץ: rebase של ה-branch האישי שלכם על main לפני מיזוג"
+    modelAnswer: |
+      שניהם מכניסים שינויים מ-branch אחד ל-branch אחר.
+      **merge** יוצר commit מיוחד שמחבר את שתי ההיסטוריות. שום דבר לא נכתב מחדש. ההיסטוריה מדויקת, אבל יכולה להיות מסורבלת.
+      **rebase** לוקח את ה-commits שלכם ומעתיק אותם אחד-אחד מעל ה-branch השני, עם hashes חדשים. התוצאה היא היסטוריה ישרה ונקייה, כאילו התחלתם מה-main העדכני.
+      הכלל: לא עושים rebase ל-commits שכבר יש לאנשים אחרים, כמו main או branch משותף. זה משכתב היסטוריה, מחייב force push ושובר להם את העותק.
+      rebase של ה-branch האישי שלכם על main לפני המיזוג הוא מקובל ובטוח.
+    explanation: "squash merge הוא אפשרות שלישית: כל ה-branch נכנס ל-main כ-commit אחד."
+
+  git-branch-002:
+    prompt: קיבלתם merge conflict. מה זה אומר ואיך פותרים?
+    keyPoints:
+      - "שני ה-branches שינו את אותן שורות (או שאחד מחק קובץ שהשני ערך), ו-Git לא יודע מה נכון"
+      - "Git מסמן את האזורים המתנגשים בקובץ עם <<<<<<< ======= >>>>>>>"
+      - "עורכים לתוצאה הנכונה, מוחקים את הסימונים, git add לקובץ, ואז commit (או rebase --continue)"
+      - "מריצים בדיקות אחר כך; אפשר לבטל עם merge --abort / rebase --abort"
+    modelAnswer: |
+      conflict אומר ששני הצדדים שינו את אותו מקום בקובץ בצורה שונה, ו-Git לא מנחש מי צודק.
+      `git status` מראה אילו קבצים בהתנגשות. בתוך הקובץ Git מוסיף סימונים: `<<<<<<<` לפני הגרסה שלכם, `=======` באמצע, ו-`>>>>>>>` אחרי הגרסה השנייה.
+      עורכים את הקובץ לתוצאה הנכונה. הרבה פעמים זה שילוב של שני הצדדים, לא בחירה באחד. מוחקים את הסימונים, מריצים `git add` על הקובץ, ומסיימים עם `git commit` (או `git rebase --continue` אם הייתם באמצע rebase).
+      אחר כך מריצים את הבדיקות, כי מיזוג שנראה תקין יכול עדיין להיות שגוי בלוגיקה. אם הסתבכתם, `git merge --abort` מחזיר להתחלה.
+    explanation: "מיזוגים קטנים ותכופים (trunk-based) = פחות התנגשויות, וקטנות יותר."
+
+  git-branch-003:
+    prompt: "מה זה trunk-based development?"
+    options:
+      - "כולם ממזגים שינויים קטנים ל-main לעתים קרובות (branches קצרים, feature flags), כך ש-main תמיד מוכן לשחרור"
+      - "branch בשם develop שחי הרבה זמן, ועוד branches לשחרורים ולתיקונים דחופים"
+      - "לכל מפתח יש branch קבוע משלו"
+      - "commit ישירות לשרתי הפרודקשן"
+    explanation: "GitFlow (branches של develop, release, hotfix) מתאים למוצרים עם גרסאות ושחרורים מתוכננים. trunk-based מתאים ל-CI/CD ולפריסות תכופות."
+
+  git-branch-004:
+    prompt: צרו branch חדש בשם `feature/login` ועברו אליו, בפקודה אחת.
+    explanation: "`git switch -c` היא הצורה החדשה, ו-`git checkout -b` עדיין עובדת בכל מקום. `git branch name` רק יוצר את ה-branch בלי לעבור אליו."
+
+  git-branch-005:
+    prompt: מה זה merge מסוג "fast-forward"?
+    options:
+      - "כשב-branch היעד אין commits חדשים, Git רק מקדם את המצביע שלו קדימה, בלי ליצור commit של merge"
+      - "merge שמדלג על הבדיקות"
+      - "merge שמוחק את ה-branch המקורי"
+      - "merge עם --force"
+    explanation: "אם main לא התקדם מאז שפתחתם את ה-branch, המיזוג רק מזיז את main קדימה ל-commit האחרון שלכם. `--no-ff` מכריח ליצור commit של merge בכל זאת."
+
+  git-branch-006:
+    prompt: מה ההבדל בין GitFlow ל-trunk-based development? מה מתאים יותר ל-CI/CD?
+    keyPoints:
+      - "GitFlow: branch קבוע בשם develop, ועוד branches לפיצ׳רים, לשחרורים ולתיקונים דחופים; שחרורים מתוכננים"
+      - "trunk-based: כולם ממזגים שינויים קטנים ל-main לעתים קרובות; branches קצרים; main תמיד מוכן"
+      - "trunk-based מתאים ל-CI/CD ולפריסות תכופות; feature flags מסתירים עבודה שלא הסתיימה"
+      - "GitFlow מתאים למוצרים עם גרסאות ושחרורים בלוח זמנים, או כשתומכים בכמה גרסאות"
+    modelAnswer: |
+      ב-**GitFlow** יש branch קבוע בשם `develop` ליד `main`, ועוד branches לפיצ׳רים, branches להכנת שחרור, ו-branches לתיקונים דחופים. זה מתאים למוצרים שמשחררים גרסאות לפי לוח זמנים, או שתומכים בכמה גרסאות במקביל.
+      ב-**trunk-based** יש branch ראשי אחד. כולם ממזגים אליו שינויים קטנים לפחות פעם ביום, branches חיים יום-יומיים, ו-main תמיד מוכן לפריסה. פיצ׳רים שלא הסתיימו מוסתרים מאחורי feature flags.
+      ל-CI/CD עם פריסות תכופות, trunk-based מתאים יותר: פחות התנגשויות ומשוב מהיר יותר.
+    explanation: רוב צוותי ה-SaaS היום עובדים trunk-based עם branches קצרים ל-PR.
+
+  git-undo-001:
+    prompt: מה ההבדל בין `git revert` ל-`git reset`? במה משתמשים על branch משותף?
+    keyPoints:
+      - "revert יוצר commit חדש שמבטל commit קודם; ההיסטוריה נשמרת"
+      - "reset מזיז את ה-branch אחורה (משכתב היסטוריה); --soft משאיר את השינויים בסל, --mixed בקבצים, --hard זורק אותם"
+      - "על branch משותף שכבר נדחף משתמשים ב-revert; reset רק לעבודה מקומית שעוד לא נדחפה"
+    modelAnswer: |
+      `git revert <commit>` מוסיף commit חדש שעושה את ההפך מה-commit הישן. ההיסטוריה נשארת שלמה, ולכן זה בטוח על branch משותף כמו main: כולם פשוט מושכים את ה-revert.
+      `git reset` מזיז את ה-branch אחורה ל-commit קודם, וכאילו מוחק את ה-commits שאחריו. `--soft` משאיר את השינויים שלהם בסל, `--mixed` (ברירת המחדל) משאיר אותם בקבצים, ו-`--hard` זורק אותם.
+      כי reset משכתב היסטוריה, משתמשים בו רק לעבודה מקומית שעוד לא נדחפה. על branch שכבר נדחף הוא מחייב force push ושובר לאחרים את העותק.
+      כדי לבטל commit בעייתי שכבר נפרס מ-main, משתמשים ב-revert.
+    explanation: "איבדתם משהו אחרי `reset --hard`? `git reflog` מראה איפה היה ה-HEAD, ובדרך כלל אפשר לשחזר."
+
+  git-undo-002:
+    prompt: בטלו את ה-commit האחרון **אצלכם במחשב** (עוד לא נדחף), אבל השאירו את השינויים שלו בסל (staged).
+    explanation: '`HEAD~1` הוא ה-commit שלפני הנוכחי. שימושי כשעשיתם commit מוקדם מדי. כדי רק לתקן את ההודעה יש `git commit --amend`.'
+
+  git-undo-003:
+    prompt: צריך לעבור ל-branch אחר, אבל יש לכם שינויים שעוד לא מוכנים ל-commit. במה משתמשים?
+    options: ["git stash (ואחר כך git stash pop)", "git reset --hard", "git clean -fd", "git revert"]
+    explanation: '`git stash` שומר את השינויים בצד ומנקה את הקבצים. `git stash pop` מחזיר אותם. `git stash -u` שומר גם קבצים חדשים שעוד לא במעקב.'
+
+  git-undo-004:
+    prompt: שיניתם קובץ, עוד לא הכנסתם אותו לסל, ואתם רוצים לזרוק את השינוי. איזו פקודה?
+    options: ["git restore file.txt", "git revert file.txt", "git reset --soft file.txt", "git stash drop file.txt"]
+    explanation: "`git restore file` מחזיר את הקובץ למצב שלו ב-commit האחרון (בצורה הישנה: `git checkout -- file`). `git restore --staged file` מוציא מהסל בלי לאבד את השינוי."
+
+  git-undo-005:
+    prompt: הרצתם `git reset --hard` ואיבדתם commits שהייתם צריכים. איך מחזירים אותם?
+    options:
+      - "git reflog מראה איפה היה ה-HEAD קודם; עושים reset או יוצרים branch על ה-commit הזה"
+      - "הם נעלמו לתמיד"
+      - "git revert --hard"
+      - "רק מגיבוי של הדיסק"
+    explanation: "ה-reflog שומר אצלכם היסטוריה של כל מקום שה-HEAD וה-branches הצביעו עליו (בערך 90 יום כברירת מחדל). מוצאים שם את ה-commit ויוצרים עליו branch: `git branch rescue <hash>`."
+
+  git-undo-006:
+    prompt: העתיקו את ה-commit הבודד `a1b2c3d` מ-branch אחר אל ה-branch הנוכחי.
+    explanation: "cherry-pick מעתיק את ה-commit הזה כ-commit חדש אצלכם. שימושי כדי להעביר תיקון דחוף ל-branch של שחרור."
+
+  git-flow-001:
+    prompt: תארו תהליך עבודה טוב עם pull requests בצוות.
+    keyPoints:
+      - "branch קצר מ-main; שינוי קטן וממוקד"
+      - "פותחים PR עם תיאור ברור; ה-CI מריץ בדיקות, lint וסריקות אוטומטית"
+      - "חברי צוות עושים code review; הגנה על ה-branch דורשת אישור ובדיקות ירוקות"
+      - "מיזוג (בדרך כלל squash), מחיקת ה-branch, ופריסה דרך ה-pipeline"
+    modelAnswer: |
+      פותחים branch קצר מ-main מעודכן, ושומרים על שינוי קטן וממוקד.
+      פותחים pull request עם תיאור ברור: מה ולמה, וקישור למשימה.
+      ה-CI רץ אוטומטית על ה-PR: בנייה, lint, בדיקות וסריקות אבטחה. בתשתית גם `terraform plan` שמתפרסם כתגובה.
+      חברי צוות בודקים את הקוד. ההגנה על main דורשת לפחות אישור אחד ובדיקות ירוקות, ואף אחד לא יכול לדחוף ישירות.
+      אחרי האישור ממזגים, בדרך כלל כ-squash ל-commit אחד נקי. ה-branch נמחק, והמיזוג מפעיל את ה-pipeline של הפריסה.
+    explanation: "הקובץ CODEOWNERS יכול לבקש אוטומטית בודקים לתיקיות רגישות, כמו קוד התשתית."
+
+  git-flow-002:
+    prompt: מה צריך להיכנס ל-`.gitignore` בפרויקט טיפוסי? (סמנו את כל הנכונות.)
+    options: ["node_modules/ ותוצרי build", "קובצי .env עם סודות", "terraform.tfstate ו-.terraform/", "ה-Dockerfile"]
+    explanation: "מתעלמים מתיקיות שנוצרות אוטומטית ומתלויות, מסודות מקומיים ומה-state של Terraform. ה-Dockerfile הוא קוד ושייך ל-Git. שימו לב: `.gitignore` לא מוציא ממעקב קובץ שכבר נכנס (צריך `git rm --cached`)."
+
+  git-flow-003:
+    prompt: מה זה pull request (או merge request)?
+    options:
+      - "בקשה למזג branch שלכם ל-branch אחר, שבה חברי הצוות בודקים את הקוד וה-CI מריץ בדיקות"
+      - "פקודת git שמורידה שינויים"
+      - "דרך למחוק branch"
+      - "בקשה לקבל גישה ל-repository"
+    explanation: "ב-PR קורים ה-code review, הדיון והבדיקות האוטומטיות, לפני שהקוד מגיע ל-main."
+
+  git-flow-004:
+    prompt: מה זו הגנה על branch (branch protection), ואילו כללים הייתם מגדירים על main?
+    keyPoints:
+      - "הגדרות ב-repository שמגבילות איך branch יכול להשתנות"
+      - "חובה לעבור דרך pull request (בלי דחיפה ישירה), עם לפחות אישור אחד"
+      - "חובה שבדיקות ה-CI יעברו לפני מיזוג"
+      - "חסימה של force push ושל מחיקה; אפשר גם לדרוש branch מעודכן, commits חתומים ובדיקה של CODEOWNERS"
+    modelAnswer: |
+      הגנה על branch היא סט של כללים ב-GitHub או ב-GitLab שמגבילים איך ה-branch יכול להשתנות.
+      על main כדאי להגדיר:
+      - שינויים רק דרך pull request, בלי דחיפה ישירה, ועם לפחות אישור אחד.
+      - בדיקות ה-CI (בנייה, בדיקות, סריקות אבטחה) חייבות לעבור לפני מיזוג.
+      - חסימה של force push ושל מחיקת ה-branch.
+      אופציונלי: לדרוש שה-branch יהיה מעודכן מול main, לדרוש בדיקה של CODEOWNERS לתיקיות רגישות כמו התשתית, ולדרוש commits חתומים.
+    explanation: הגנה על branch הופכת "בדרך כלל אנחנו בודקים" ל"תמיד בודקים". זה חשוב במיוחד ב-repos של תשתית.
+
+  git-basics-007:
+    prompt: הציגו אילו קבצים השתנו, אילו ב-staging ואילו לא במעקב, בתיקיית העבודה.
+    explanation: "מריצים את זה הרבה. הפקודה גם אומרת באיזה branch אתם, ואם אתם לפני או אחרי ה-remote. `-s` נותן תצוגה קצרה בשתי עמודות."
+
+  git-basics-008:
+    prompt: הציגו את השינויים שעשיתם בקבצים במעקב, ש**עוד לא** נוספו ל-staging.
+    explanation: "`git diff` משווה את תיקיית העבודה ל-staging. `git diff --staged` (או `--cached`) מראה מה כבר ב-staging ויכנס ל-commit הבא."
+
+  git-basics-009:
+    prompt: עשו commit לשינויים שב-staging, עם ההודעה `Fix login bug`.
+    explanation: "בלי `-m`, Git פותח עורך לכתיבת ההודעה. `git commit -am` מוסיף קודם ל-staging שינויים בקבצים במעקב, אבל אף פעם לא קבצים חדשים."
+
+  git-basics-010:
+    prompt: דחפו את ה-branch המקומי החדש `feature/login` ל-`origin` בפעם הראשונה, והגדירו שהוא יעקוב אחרי ה-branch המרוחק.
+    explanation: "`-u` מקשר את ה-branch המקומי ל-`origin/feature/login`, כך שבהמשך `git push` או `git pull` רגילים יודעים לאן ללכת."
+
+  git-branch-007:
+    prompt: מה זה branch ב-Git, מבחינה טכנית?
+    options:
+      - "מצביע שזז, שמצביע על commit; הוא מתקדם כשעושים commits חדשים"
+      - "עותק מלא של ה-repo"
+      - "תיקייה בשרת"
+      - "רשימה של קבצים"
+    explanation: "לכן ב-Git זול ליצור branches. `HEAD` מצביע על ה-branch שאתם נמצאים בו."
+
+  git-branch-008:
+    prompt: מה ההבדל בין tag ל-branch?
+    options:
+      - "tag מסמן commit אחד מסוים ולא זז (למשל v1.2.0); branch מתקדם עם commits חדשים"
+      - "אפשר ליצור tags רק על main"
+      - "tag הוא branch שנמחק"
+      - "אין הבדל"
+    explanation: "tags מסמנים גרסאות, והרבה פעמים ה-CI בונה release כשנדחף tag. tags לא נדחפים כברירת מחדל: `git push origin v1.2.0` או `git push --tags`."
+
+  git-undo-007:
+    prompt: עשיתם commit על `main` בטעות; הוא היה צריך להיות על branch חדש. עוד לא דחפתם. איך מתקנים?
+    options:
+      - "יוצרים branch ב-commit הנוכחי (`git branch feature/x`), מחזירים את main commit אחד אחורה (`git reset --hard HEAD~1`), ועוברים ל-branch החדש"
+      - "מוחקים את ה-repo ומורידים אותו מחדש"
+      - "מריצים `git revert` על main ודוחפים"
+      - "משנים את השם של main ל-feature/x"
+    explanation: "ה-commit לא הולך לאיבוד: ה-branch החדש עדיין מצביע עליו. כיוון ששום דבר לא נדחף, מותר לשנות את main המקומי. אם זה כבר נדחף, מדברים עם הצוות לפני שמשנים היסטוריה של branch משותף."
+
+  git-flow-005:
+    prompt: מה הודעת ה-commit הכי טובה?
+    options:
+      - "\"Fix timeout in payment API retry logic\""
+      - "\"fix\""
+      - "\"changes\""
+      - "\"asdf\""
+    explanation: "שורת סיכום קצרה בלשון ציווי (\"Fix…\", \"Add…\"), ואם צריך, גוף שמסביר **למה**. יש צוותים שמשתמשים ב-conventional commits: `fix: …`, `feat: …`."
+
+  git-flow-006:
+    prompt: מה עושה "squash merge" של pull request?
+    options:
+      - "מאחד את כל ה-commits של ה-PR ל-commit אחד ב-branch היעד"
+      - "מוחק את ה-PR בלי למזג"
+      - "ממזג ושומר כל commit, ועוד merge commit"
+      - "עושה rebase של main על ה-branch של הפיצ'ר"
+    explanation: "ההיסטוריה של main נשארת נקייה (commit אחד לכל PR), וקל לבטל פיצ'ר שלם. המחיר: ה-commits הנפרדים מה-branch לא נשמרים ב-main."

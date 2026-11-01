@@ -1,0 +1,390 @@
+topic: bash
+questions:
+  # ---------- Redirection ----------
+  - id: bash-redir-001
+    type: mcq
+    subtopic: redirection
+    level: 1
+    tags: [il-common]
+    prompt: What does `./deploy.sh > out.log 2>&1` do?
+    options:
+      - "Sends both stdout and stderr to out.log"
+      - "Sends stdout to out.log and stderr to a file called 1"
+      - "Sends only stderr to out.log"
+      - "Appends stdout to out.log"
+    correct: [0]
+    explanation: "`>` redirects stdout (fd 1) to the file, and `2>&1` points stderr (fd 2) at wherever stdout currently goes. Order matters: `2>&1 > out.log` leaves stderr on the terminal. `>>` appends, and `&>` (bash) is shorthand for both."
+
+  - id: bash-redir-002
+    type: open
+    subtopic: redirection
+    level: 1
+    prompt: What are stdin, stdout and stderr, and what does a pipe `|` do?
+    rubric:
+      keyPoints:
+        - { text: "Three standard streams: stdin (fd 0, input), stdout (fd 1, normal output), stderr (fd 2, errors/diagnostics)", weight: 3 }
+        - { text: "A pipe connects the stdout of one command to the stdin of the next", weight: 3 }
+        - { text: "stderr is not piped by default (use 2>&1 or |&)", weight: 2 }
+        - { text: "Lets small tools be combined (Unix philosophy)", weight: 1 }
+    modelAnswer: |
+      Every process starts with three open file descriptors: 0 is stdin, where it reads input, 1 is stdout for normal output, and 2 is stderr for errors. They're separate so you can, for example, save the output to a file and still see errors on screen. A pipe, `cmd1 | cmd2`, connects cmd1's stdout to cmd2's stdin, so you can chain small tools: `grep ERROR app.log | sort | uniq -c`. Only stdout goes through the pipe. stderr still goes to the terminal unless you redirect it with `2>&1` (or `|&` in bash).
+    explanation: "`/dev/null` discards output: `cmd > /dev/null 2>&1` silences everything."
+
+  - id: bash-redir-003
+    type: command
+    subtopic: redirection
+    level: 1
+    prompt: Run `./backup.sh`, appending both its normal output and its errors to `/var/log/backup.log`.
+    answers: ["./backup.sh >> /var/log/backup.log 2>&1"]
+    patterns: ['^\./backup\.sh ?>> ?/var/log/backup\.log 2>&1$', '^\./backup\.sh &>> ?/var/log/backup\.log$']
+    samples: ["./backup.sh &>> /var/log/backup.log", "./backup.sh >>/var/log/backup.log 2>&1"]
+    rejects: ["./backup.sh > /var/log/backup.log", "./backup.sh 2>&1 >> /var/log/backup.log"]
+    explanation: '`>>` appends instead of overwriting. `2>&1` must come **after** the file redirect. That''s exactly the line you''d put in a crontab.'
+
+  # ---------- Scripting ----------
+  - id: bash-script-001
+    type: open
+    subtopic: scripting
+    level: 2
+    tags: [il-common]
+    prompt: What does `set -euo pipefail` do at the top of a bash script, and why use it?
+    rubric:
+      keyPoints:
+        - { text: "-e: exit as soon as a command fails (non-zero exit)", weight: 3 }
+        - { text: "-u: treat unset variables as an error", weight: 2 }
+        - { text: "-o pipefail: a pipeline fails if any command in it fails (not just the last)", weight: 3 }
+        - { text: "Makes scripts fail fast and loudly instead of continuing in a broken state (e.g. rm -rf $DIR/ with empty DIR)", weight: 2 }
+    modelAnswer: |
+      It's "strict mode". `-e` makes the script exit as soon as any command fails, instead of carrying on. `-u` makes using an unset variable an error, which saves you from things like `rm -rf "$BUILD_DIR/"` with an empty variable deleting from root. `-o pipefail` makes a pipeline fail if any command in it fails; by default only the last command's exit status counts, so `curl ... | jq` would look successful even if curl failed. Together they make CI and deploy scripts fail fast and visibly instead of half-succeeding. Add `trap` for cleanup, and `-x` when debugging.
+    explanation: "`-e` has subtle exceptions: commands in `if` conditions or before `||`/`&&` don't trigger it. It's still a strong default."
+
+  - id: bash-script-002
+    type: mcq
+    subtopic: scripting
+    level: 1
+    prompt: How do you check the exit status of the last command in bash, and what value means success?
+    options: ["`$?`; 0 means success", "`$!`; 1 means success", "`$#`; 0 means success", "`$0`; any non-zero means success"]
+    correct: [0]
+    explanation: "Exit code 0 means success and anything else means failure. `$?` is the last exit status, `$!` the PID of the last background job, `$#` the number of arguments, `$0` the script name, `$@` all arguments."
+
+  - id: bash-script-003
+    type: mcq
+    subtopic: scripting
+    level: 2
+    prompt: Why should you write `"$file"` (with quotes) instead of `$file` in bash?
+    options:
+      - "Unquoted variables undergo word splitting and globbing, so file names with spaces or * break the command"
+      - "Quotes make the variable read-only"
+      - "Quotes are only needed for numbers"
+      - "There's no difference"
+    correct: [0]
+    explanation: "With `file=\"my report.txt\"`, `rm $file` tries to remove `my` and `report.txt`. Always quote expansions, `\"$var\"` and `\"$@\"`. ShellCheck catches this."
+
+  - id: bash-script-004
+    type: open
+    subtopic: scripting
+    level: 2
+    prompt: Write (describe) a bash script that checks whether a list of hosts respond on port 443 and prints which ones are down. What constructs would you use?
+    rubric:
+      keyPoints:
+        - { text: "Loop over hosts (for host in ... / while read from a file)", weight: 2 }
+        - { text: "Check the port with nc -z / curl / timeout + /dev/tcp, with a timeout", weight: 3 }
+        - { text: "Use the exit code in an if to decide up/down", weight: 2 }
+        - { text: "Quote variables, set -u/pipefail, exit non-zero if any host is down (useful for cron/CI)", weight: 2 }
+    modelAnswer: |
+      I'd read the hosts from an argument or a file and loop: `while read -r host; do ... done < hosts.txt`. For each one, test the port with a short timeout, like `if nc -z -w 3 "$host" 443; then echo "$host up"; else echo "$host DOWN"; failed=1; fi`. Without nc, `timeout 3 bash -c "</dev/tcp/$host/443"` works. Strict mode at the top, quoted variables, and at the end `exit $failed` so a cron job or CI step can alert on a non-zero status. For many hosts, run checks in parallel with `&` and `wait`, or `xargs -P`.
+    explanation: "Interviewers want to see that you use exit codes and timeouts, and that you think about how the script will be used (cron or CI)."
+
+  - id: bash-script-005
+    type: mcq
+    subtopic: scripting
+    level: 2
+    prompt: "What's the difference between `source script.sh` and `./script.sh`?"
+    options:
+      - "source runs it in the CURRENT shell (variables/cd persist); ./ runs it in a new child process"
+      - "source compiles the script first"
+      - "./ requires root"
+      - "No difference"
+    correct: [0]
+    explanation: "That's why you `source venv/bin/activate` or `source ~/.bashrc`: they need to change your current shell's environment. `./script.sh` needs the execute bit and a shebang."
+
+  # ---------- Text tools ----------
+  - id: bash-text-001
+    type: command
+    subtopic: text-tools
+    level: 1
+    prompt: Recursively search the `/etc/nginx` directory for lines containing `server_name`, case-insensitive, showing line numbers.
+    answers: ["grep -rin server_name /etc/nginx"]
+    patterns: ['^grep -\w*(?=\w*r|\w*R)(?=\w*i)(?=\w*n)\w* ''?server_name''? /etc/nginx/?$']
+    samples: ["grep -Rin 'server_name' /etc/nginx", "grep -nri server_name /etc/nginx/", "grep -r -i -n server_name /etc/nginx"]
+    rejects: ["grep server_name /etc/nginx", "find /etc/nginx -name server_name"]
+    explanation: "`-r` recursive, `-i` ignore case, `-n` line numbers. Also: `-v` invert, `-c` count, `-l` file names only, `-E` extended regex, `-A/-B/-C N` context lines."
+
+  - id: bash-text-002
+    type: command
+    subtopic: text-tools
+    level: 2
+    tags: [il-common]
+    prompt: '`access.log` has the client IP as the first field. Print the 5 IPs with the most requests, with their counts.'
+    answers: ["awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -5"]
+    patterns: ["^(awk '\\{ ?print \\$1 ?\\}' access\\.log|cut -d ?' ' -f ?1 access\\.log|cat access\\.log \\| awk '\\{ ?print \\$1 ?\\}') \\| sort \\| uniq -c \\| sort -(rn|nr|n -r) \\| head -(n ?)?5$"]
+    samples: ["cut -d' ' -f1 access.log | sort | uniq -c | sort -nr | head -5", "awk '{print $1}' access.log | sort | uniq -c | sort -rn | head -n 5", "cat access.log | awk '{print $1}' | sort | uniq -c | sort -rn | head -5"]
+    rejects: ["sort access.log | uniq -c | head -5", "awk '{print $1}' access.log | uniq -c | sort -rn | head -5"]
+    explanation: "The classic pipeline: extract the field → `sort` (uniq only collapses ADJACENT duplicates, so sorting first is required) → `uniq -c` (count) → `sort -rn` (numeric, descending) → `head`. Interviewers love this one."
+
+  - id: bash-text-003
+    type: command
+    subtopic: text-tools
+    level: 2
+    prompt: Replace every occurrence of `localhost` with `db.internal` in `config.ini`, editing the file in place.
+    answers: ["sed -i 's/localhost/db.internal/g' config.ini"]
+    patterns: ["^sed -i(\\.bak| '')? '?s([/|#])localhost\\2db\\\\?\\.internal\\2g'? config\\.ini$"]
+    samples: ["sed -i 's|localhost|db.internal|g' config.ini", "sed -i.bak 's/localhost/db.internal/g' config.ini"]
+    rejects: ["sed 's/localhost/db.internal/g' config.ini", "sed -i 's/localhost/db.internal/' config.ini"]
+    explanation: "`s/old/new/g`, where `g` means all occurrences on each line (without it, only the first). `-i` edits in place; `-i.bak` keeps a backup. On macOS BSD sed needs `-i ''`."
+
+  - id: bash-text-004
+    type: mcq
+    subtopic: text-tools
+    level: 1
+    prompt: Which tool is best for the job "print the 3rd column of a whitespace-separated file"?
+    options: ["awk '{print $3}' file", "grep -3 file", "sed -n 3p file", "head -3 file"]
+    correct: [0]
+    explanation: "awk splits each line into fields (`$1`, `$2`, …, and `$NF` for the last). `sed -n 3p` prints the 3rd **line**, and `head -3` the first 3 lines. For a fixed delimiter, `cut -d, -f3` also works."
+
+  - id: bash-text-005
+    type: command
+    subtopic: text-tools
+    level: 1
+    prompt: Follow `app.log` live and show only lines containing `ERROR`.
+    answers: ["tail -f app.log | grep ERROR"]
+    patterns: ["^tail -(f|F|n ?\\d+ -f|f -n ?\\d+) app\\.log \\| grep (--line-buffered )?'?ERROR'?$"]
+    samples: ["tail -F app.log | grep ERROR", "tail -f app.log | grep --line-buffered ERROR"]
+    rejects: ["grep ERROR app.log", "tail app.log | grep ERROR"]
+    explanation: '`-f` follows; `-F` also follows across log rotation. If you pipe the grep into another command, add `--line-buffered` so output isn''t held in a buffer.'
+
+  - id: bash-text-006
+    type: command
+    subtopic: text-tools
+    level: 2
+    prompt: Find all `.log` files under `/var/app` older than 7 days and delete them.
+    answers: ["find /var/app -name '*.log' -mtime +7 -delete"]
+    patterns: ["^find /var/app (-type f )?(?=.*-name '\\*\\.log')(?=.*-mtime \\+7).*(-delete|-exec rm (-f )?\\{\\} (\\\\;|\\+))$"]
+    samples: ["find /var/app -type f -name '*.log' -mtime +7 -delete", "find /var/app -mtime +7 -name '*.log' -exec rm {} \\;", "find /var/app -name \"*.log\" -mtime +7 -exec rm -f {} +"]
+    rejects: ["rm /var/app/*.log", "find /var/app -name '*.log' -mtime 7 -delete"]
+    explanation: '`-mtime +7` means modified more than 7 days ago. **Run it without `-delete` first** to see what would be removed. Quote the glob so the shell doesn''t expand it.'
+
+  # ---------- One-liners ----------
+  - id: bash-ol-001
+    type: command
+    subtopic: one-liners
+    level: 2
+    prompt: Count how many lines in `app.log` contain the word `timeout` (case-insensitive).
+    answers: ["grep -ci timeout app.log"]
+    patterns: ["^grep -\\w*(?=\\w*c)(?=\\w*i)\\w* '?timeout'? app\\.log$", "^grep -\\w*i\\w* '?timeout'? app\\.log \\| wc -l$"]
+    samples: ["grep -ic timeout app.log", "grep -i timeout app.log | wc -l", "grep -c -i timeout app.log"]
+    rejects: ["grep timeout app.log", "wc -l app.log"]
+    explanation: "`grep -c` counts matching lines (not occurrences). For occurrences use `grep -oi timeout app.log | wc -l`."
+
+  - id: bash-ol-002
+    type: command
+    subtopic: one-liners
+    level: 2
+    prompt: Show the 10 largest files and directories under the current directory, biggest first, human-readable.
+    answers: ["du -ah . | sort -rh | head -10"]
+    patterns: ["^du -\\w*(?=\\w*h)\\w* (\\.|\\*|\\./\\*)( 2>/dev/null)? \\| sort -\\w*(?=\\w*r)(?=\\w*h)\\w* \\| head( -n)? ?-?10$"]
+    samples: ["du -sh * | sort -rh | head -10", "du -ah . | sort -hr | head -n 10", "du -sh ./* 2>/dev/null | sort -rh | head -10"]
+    rejects: ["ls -lS | head -10", "du -sh * | sort -r | head -10"]
+    explanation: "`sort -h` understands human-readable sizes (K, M, G); plain `sort -r` would order `9K` above `1G`."
+
+  - id: bash-ol-003
+    type: mcq
+    subtopic: one-liners
+    level: 2
+    prompt: What does `xargs` do in `find . -name '*.tmp' | xargs rm`?
+    options:
+      - "Turns lines from stdin into command-line arguments for rm (batched)"
+      - "Runs rm once per line in a subshell automatically handling all filenames safely"
+      - "Prints the arguments without running anything"
+      - "Waits for find to finish before starting"
+    correct: [0]
+    explanation: "xargs builds argument lists from stdin. Filenames with spaces break it, so use `find … -print0 | xargs -0 rm`, or just `find … -delete` / `-exec rm {} +`. `xargs -P 4` runs in parallel."
+
+  - id: bash-ol-004
+    type: open
+    subtopic: one-liners
+    level: 3
+    prompt: A web server returns some 5xx errors. Using only shell tools on `access.log` (combined log format, status code in field 9), how would you find which URLs produce the most 5xx responses?
+    rubric:
+      keyPoints:
+        - { text: "Filter lines where the status field starts with 5 (awk '$9 ~ /^5/')", weight: 3 }
+        - { text: "Extract the URL/path field ($7)", weight: 2 }
+        - { text: "sort | uniq -c | sort -rn | head to rank", weight: 3 }
+        - { text: "Optionally restrict by time window or count per status code", weight: 1 }
+    modelAnswer: |
+      With awk I can filter and extract in one step: `awk '$9 ~ /^5/ {print $7}' access.log | sort | uniq -c | sort -rn | head`. That keeps only lines where the 9th field, the status, starts with 5, prints the 7th field, the request path, then counts and ranks them. To see which codes, print `$9, $7` instead. To focus on the last hour, I'd first filter by the timestamp field or use `tail -n` on a recent chunk. If query strings make URLs unique, I'd strip them with `sub(/\?.*/, "", $7)` inside awk.
+    explanation: In real life you'd query this in your log platform (Loki, ELK, CloudWatch Logs Insights), but the shell skills transfer and come up in live screens.
+
+  # ---------- Added: basics ----------
+  - id: bash-redir-004
+    type: mcq
+    subtopic: redirection
+    level: 1
+    prompt: What's the difference between `echo hi > notes.txt` and `echo hi >> notes.txt`?
+    options:
+      - "`>` overwrites the file; `>>` appends to the end of it"
+      - "`>` appends; `>>` overwrites"
+      - "`>>` writes to stderr"
+      - "No difference"
+    correct: [0]
+    explanation: "Both create the file if it doesn't exist. `>` empties it first, which is a classic way to lose a config file by accident. `set -o noclobber` makes `>` refuse to overwrite."
+
+  - id: bash-redir-005
+    type: command
+    subtopic: redirection
+    level: 1
+    prompt: Run `./noisy.sh` and throw away all of its output, both normal output and errors.
+    answers: ["./noisy.sh > /dev/null 2>&1"]
+    patterns: ['^\./noisy\.sh ?> ?/dev/null 2>&1$', '^\./noisy\.sh &> ?/dev/null$']
+    samples: ["./noisy.sh &> /dev/null", "./noisy.sh >/dev/null 2>&1"]
+    rejects: ["./noisy.sh > /dev/null", "./noisy.sh 2>&1 > /dev/null"]
+    explanation: "`/dev/null` discards anything written to it. `2>&1` must come after `> /dev/null`, otherwise stderr still goes to the terminal."
+
+  - id: bash-redir-006
+    type: mcq
+    subtopic: redirection
+    level: 1
+    tags: [il-common]
+    prompt: In `make build && ./deploy.sh`, when does `./deploy.sh` run?
+    options:
+      - "Only if `make build` succeeded (exit code 0)"
+      - "Only if `make build` failed"
+      - "Always, after `make build` finishes"
+      - "At the same time as `make build`"
+    correct: [0]
+    explanation: "`&&` runs the next command only on success, `||` only on failure, and `;` always. `cmd || echo \"failed\"` is a common pattern. A single `&` runs the command in the background."
+
+  - id: bash-script-006
+    type: mcq
+    subtopic: scripting
+    level: 1
+    prompt: What does the first line `#!/bin/bash` in a script do?
+    options:
+      - "It's the shebang: it tells the system which interpreter runs the script when you run `./script.sh`"
+      - "It's a comment that's ignored completely"
+      - "It makes the script run as root"
+      - "It imports bash functions from /bin"
+    correct: [0]
+    explanation: "Without a shebang the script runs with whatever shell launches it. `#!/usr/bin/env bash` finds bash on the PATH, which is more portable. You still need `chmod +x`."
+
+  - id: bash-script-007
+    type: mcq
+    subtopic: scripting
+    level: 1
+    prompt: "Why does `NAME = \"dana\"` fail in bash with `NAME: command not found`?"
+    options:
+      - "Assignment can't have spaces around `=`; bash reads NAME as a command"
+      - "Variable names must be lowercase"
+      - "Strings need single quotes"
+      - "You must write `set NAME`"
+    correct: [0]
+    explanation: "Write `NAME=\"dana\"` with no spaces, and read it with `$NAME` or `\"${NAME}\"`. Inside `[ ]` tests it's the opposite: you need spaces, as in `[ \"$a\" = \"$b\" ]`."
+
+  - id: bash-script-008
+    type: command
+    subtopic: scripting
+    level: 1
+    prompt: Set the variable `ENV` to `prod` so that programs you start from this shell can see it.
+    answers: ["export ENV=prod"]
+    patterns: ["^export ENV='?prod'?$"]
+    samples: ["export ENV='prod'", "export ENV=\"prod\""]
+    rejects: ["ENV=prod", "set ENV=prod"]
+    explanation: "Without `export`, the variable exists only in the current shell, and child processes (scripts, apps) don't get it. `env` or `printenv ENV` shows what's exported. For one command only: `ENV=prod ./app`."
+
+  - id: bash-script-009
+    type: mcq
+    subtopic: scripting
+    level: 1
+    prompt: "A script is run as `./deploy.sh staging v2`. Inside it, what are `$1` and `$#`?"
+    options:
+      - "`$1` is `staging` and `$#` is 2"
+      - "`$1` is `./deploy.sh` and `$#` is 3"
+      - "`$1` is `v2` and `$#` is 2"
+      - "`$1` is `staging` and `$#` is the PID"
+    correct: [0]
+    explanation: "`$0` is the script name, `$1`, `$2`… are the arguments, `$#` is how many there are, and `\"$@\"` is all of them (quoted, each kept separate). Check them early: `[ $# -eq 2 ] || { echo \"usage: $0 env version\"; exit 1; }`."
+
+  - id: bash-script-010
+    type: open
+    subtopic: scripting
+    level: 2
+    prompt: A bash script fails and you don't know where. How do you debug it?
+    rubric:
+      keyPoints:
+        - { text: "Run it with bash -x (or set -x) to print each command as it runs", weight: 3 }
+        - { text: "Check exit codes ($?) and read the error output (stderr), add set -euo pipefail so it stops at the real failure", weight: 2 }
+        - { text: "Add echo/printf of variables at key points, or run the failing part by hand", weight: 2 }
+        - { text: "Run ShellCheck to catch quoting and syntax mistakes", weight: 2 }
+        - { text: "Compare environments when it only fails somewhere else (cron, CI): PATH, user, working directory", weight: 1 }
+    modelAnswer: |
+      First I'd run it with `bash -x script.sh`, or put `set -x` around the suspicious part. It prints every command after variables are expanded, so you see exactly which line fails and with what values.
+      I'd make sure it has `set -euo pipefail`, so it stops at the real failure instead of failing later in a confusing place, and I'd read stderr and the exit code (`echo $?`).
+      Then I'd print the important variables, or copy the failing command and run it by hand.
+      I'd also run ShellCheck, which catches missing quotes and other common mistakes.
+      If it only fails in cron or CI, I'd compare the environment: PATH, the user, and the working directory.
+    explanation: "`PS4='+ ${LINENO}: '` before `set -x` adds line numbers to the trace."
+
+  - id: bash-text-007
+    type: command
+    subtopic: text-tools
+    level: 1
+    prompt: Count how many lines `app.log` has.
+    answers: ["wc -l app.log"]
+    patterns: ['^wc -l (< ?)?app\.log$', '^cat app\.log \| wc -l$']
+    samples: ["wc -l < app.log", "cat app.log | wc -l"]
+    rejects: ["wc app.log", "wc -w app.log"]
+    explanation: "`wc -l` counts lines, `-w` words and `-c` bytes. With `<` it prints only the number, without the file name, which is handy in scripts."
+
+  - id: bash-text-008
+    type: command
+    subtopic: text-tools
+    level: 1
+    prompt: Show all lines of `app.log` that do **not** contain `DEBUG`.
+    answers: ["grep -v DEBUG app.log"]
+    patterns: ["^grep -v '?DEBUG'? app\\.log$", "^cat app\\.log \\| grep -v '?DEBUG'?$"]
+    samples: ["grep -v 'DEBUG' app.log", "cat app.log | grep -v DEBUG"]
+    rejects: ["grep DEBUG app.log", "grep -c DEBUG app.log"]
+    explanation: "`-v` inverts the match. You can chain it to remove noise: `grep ERROR app.log | grep -v healthcheck`."
+
+  - id: bash-text-009
+    type: command
+    subtopic: text-tools
+    level: 2
+    prompt: '`/etc/passwd` is separated by colons (`:`). Print only the first field (the user names).'
+    answers: ["cut -d: -f1 /etc/passwd"]
+    patterns: ["^cut (-d ?'?:'? -f ?1|-f ?1 -d ?'?:'?) /etc/passwd$", "^awk -F ?'?:'? '\\{ ?print \\$1 ?\\}' /etc/passwd$"]
+    samples: ["cut -d ':' -f 1 /etc/passwd", "cut -f1 -d: /etc/passwd", "awk -F: '{print $1}' /etc/passwd"]
+    rejects: ["cut -f1 /etc/passwd", "awk '{print $1}' /etc/passwd"]
+    explanation: "`cut -d` sets the separator (the default is a tab) and `-f` picks fields, such as `-f1,3`. awk does the same with `-F:`, and it's more flexible when you need conditions."
+
+  - id: bash-ol-005
+    type: command
+    subtopic: one-liners
+    level: 1
+    prompt: Find which files under `/etc` contain the text `10.0.0.5`. Print only the file names.
+    answers: ["grep -rl 10.0.0.5 /etc"]
+    patterns: ["^grep -\\w*(?=\\w*[rR])(?=\\w*l)\\w* (-F )?'?10\\\\?\\.0\\\\?\\.0\\\\?\\.5'? /etc/?$"]
+    samples: ["grep -Rl '10.0.0.5' /etc", "grep -lr 10.0.0.5 /etc/", "grep -r -l 10.0.0.5 /etc"]
+    rejects: ["grep 10.0.0.5 /etc", "find /etc -name 10.0.0.5"]
+    explanation: "`-r` searches all files in the folder, and `-l` lists only the names of files that match. Useful before changing an IP or a hostname. In a regex `.` matches any character, so `-F` (fixed string) is more exact."
+
+  - id: bash-ol-006
+    type: command
+    subtopic: one-liners
+    level: 2
+    prompt: Re-run `df -h` every 5 seconds so you can watch disk usage change.
+    answers: ["watch -n 5 df -h"]
+    patterns: ["^watch -n ?5 '?df -h'?$"]
+    samples: ["watch -n5 df -h", "watch -n 5 'df -h'"]
+    rejects: ["df -h", "watch df -h"]
+    explanation: "`watch` runs a command again and again and shows the latest output full screen. The default is every 2 seconds. `-d` highlights what changed. Same idea: `watch kubectl get pods`."

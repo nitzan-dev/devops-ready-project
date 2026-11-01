@@ -1,0 +1,175 @@
+topic: project
+questions:
+  proj-arch-001:
+    prompt: תארו את הארכיטקטורה של פרויקט הקורס שלכם, MyBroker, בערך בשתי דקות.
+    keyPoints:
+      - "מה האפליקציה: מעקב תיקי השקעות ב-Next.js; שרת בלי מצב, המידע בדפדפן (IndexedDB), והשרת רק מעביר נתוני שוק"
+      - "תשתית: Terraform יוצר cluster של kind עם 3 nodes ומתקין את הפלטפורמה (Traefik ingress, TLS עם cert-manager, metrics-server, kube-prometheus-stack, Argo CD)"
+      - "פריסה: Helm chart עם קובץ values לכל סביבה; Argo CD בדפוס app-of-apps ל-staging ול-prod (auto-sync, prune, self-heal)"
+      - "CI/CD: בדיקות ב-GitHub Actions (lint, בדיקות, בנייה, Trivy, helm lint, kubeconform, terraform validate); ה-release בונה image ל-GHCR ועושה commit לתגית החדשה ב-Git"
+      - "ניטור ואמינות: /api/metrics ו-ServiceMonitor, דשבורד ב-Grafana, התראות PrometheusRule, HPA, PDB ו-probes"
+      - "מבנה ברור: מתחילים מהתמונה הכללית, עוברים בשכבות, ומסיימים בהחלטה או פשרה חשובה"
+    modelAnswer: |
+      MyBroker היא אפליקציית Next.js למעקב אחרי תיקי השקעות. השרת לא שומר מצב: המידע של המשתמש נשאר ב-IndexedDB בדפדפן, והשרת רק מעביר נתוני שוק, עם cache קטן בזיכרון.
+      בקורס בניתי לה פלטפורמה בסגנון production שרצה מקומית בלי עלות:
+      - **תשתית**: `terraform apply` אחד יוצר cluster של kind עם 3 nodes, ומתקין את הפלטפורמה: Traefik כ-ingress, cert-manager עם CA מקומי ל-TLS, metrics-server בשביל ה-HPA, kube-prometheus-stack לניטור, ו-Argo CD.
+      - **אריזה**: האפליקציה ארוזה כ-Helm chart עם Deployment, Service, Ingress, HPA, PDB, NetworkPolicy, ServiceMonitor וחוקי התראה, וקובץ values לכל סביבה.
+      - **פריסה**: Argo CD מריץ app-of-apps שפורס את staging ואת prod מ-Git, עם auto-sync ו-self-heal.
+      - **CI**: GitHub Actions רץ על כל pull request (lint, בדיקות, בניית Docker, סריקת Trivy, helm lint, kubeconform, terraform validate). ה-workflow של ה-release דוחף את ה-image ל-GHCR ועושה commit לתגית החדשה ב-Git, ו-Argo CD פורס אותה.
+      ה-CI אף פעם לא מריץ kubectl apply.
+    explanation: תתאמנו על זה בקול עד שזה יורד מתחת לשתי דקות. אחר כך המראיינים בוחרים שכבה אחת ומעמיקים, אז כדאי לדעת את ה"למה" של כל שכבה.
+    followUps: ["למה בחרתם ב-GitOps ולא בפריסה ישירה מה-pipeline של ה-CI?", "מה הייתם משנים כדי להריץ את זה ב-AWS?"]
+
+  proj-arch-002:
+    prompt: למה השתמשתם ב-kind ולא ב-cluster מנוהל כמו EKS, ומה היה משתנה במעבר ל-AWS?
+    keyPoints:
+      - "האילוץ: תקציב אפס והדגמה מקומית שעובדת גם בלי אינטרנט; kind מריץ Kubernetes אמיתי (אותו API ואותם קבצים)"
+      - "מחליפים את משאב ה-cluster של kind ב-module של EKS (ו-VPC) ב-Terraform"
+      - "ingress מאחורי LoadBalancer של הענן; Let's Encrypt ו-external-dns במקום ה-CA המקומי"
+      - "state מרוחק ל-Terraform (S3 עם נעילה); External Secrets עם Secrets Manager; אחסון קבוע ל-Prometheus"
+      - "ה-Helm chart וההגדרות של Argo CD נשארים אותו דבר"
+    modelAnswer: |
+      האילוצים היו עלות אפס, והדגמה שעובדת על המחשב שלי בלי לחשוף כלום לאינטרנט. kind מריץ Kubernetes אמיתי, כך שהקבצים, ה-Helm chart ו-Argo CD הם בדיוק מה שהיה רץ על cluster מנוהל.
+      במעבר ל-AWS:
+      - ב-Terraform מחליפים את משאב ה-cluster של kind ב-module של EKS, יחד עם module של VPC.
+      - שמים את ה-ingress מאחורי load balancer של הענן.
+      - מחליפים את ה-CA המקומי ב-Let's Encrypt וב-external-dns.
+      - מעבירים את ה-state של Terraform ל-S3 עם נעילה.
+      - במקום secrets ש-Terraform יוצר, External Secrets מסנכרן אותם מ-AWS Secrets Manager.
+      - נותנים ל-Prometheus אחסון קבוע, או משתמשים ב-Prometheus מנוהל.
+      ה-chart ושכבת ה-GitOps לא היו משתנים, וזו בדיוק הייתה המטרה של התכנון.
+    explanation: להראות שאתם מבינים את ההבדל בין סביבה מקומית ל-production זה בדיוק מה שבודקים אצל ג'וניורים.
+
+  proj-arch-003:
+    prompt: האפליקציה שלכם שומרת cache בזיכרון של כל pod. מה היתרונות והחסרונות, ומה הייתם משנים בהיקף גדול יותר?
+    keyPoints:
+      - "pods בלי מצב ניתנים להחלפה: קל להוסיף עותקים, אין צורך להצמיד משתמש ל-pod, והתאוששות מאסון פשוטה"
+      - "cache לכל pod = בקשות כפולות לספק הנתונים (N pods ← עד פי N קריאות ל-Yahoo), ופחות פגיעות ב-cache"
+      - "בהיקף גדול: cache משותף כמו Redis (או CDN), כדי להוריד את העומס על הספק"
+      - "לשים לב למגבלות הקצב של הספק; להתריע על כישלונות שלו, ולא להכשיל בגללם את בדיקות התקינות"
+    modelAnswer: |
+      השרת בלי מצב בכוונה: ה-pods ניתנים להחלפה, ה-HPA יכול להוסיף ולהוריד אותם בחופשיות, אין צורך להצמיד משתמש ל-pod, והתאוששות מאסון היא פשוט להריץ שוב את Terraform ולתת ל-Argo CD להחזיר הכול.
+      המחיר: לכל pod יש cache קטן משלו. עם 6 pods, ה-API של המחירים יכול לקבל עד פי 6 בקשות, ואחוז הפגיעות ב-cache נמוך יותר.
+      בהיקף הנוכחי זה בסדר. בהיקף גדול יותר, הצעד הבא הוא cache משותף כמו Redis לפני הקריאות לספק, אולי עם איחוד של בקשות זהות, כך שכל ה-pods חולקים cache אחד ונשארים הרחק ממגבלות הקצב של הספק.
+    explanation: לציין בעצמכם את נקודת החולשה של התכנון שלכם ואת הצעד הבא, זה סימן חזק בראיון.
+
+  proj-arch-004:
+    prompt: ב-MyBroker, איפה נשמר המידע על התיק של המשתמש?
+    options:
+      - "ב-IndexedDB של הדפדפן; השרת בלי מצב ורק מעביר נתוני שוק"
+      - "במסד נתונים PostgreSQL בתוך ה-cluster"
+      - "ב-ConfigMap של Kubernetes"
+      - "ב-S3 bucket"
+    explanation: "לכן ה-pods ניתנים להחלפה, וה-HPA יכול לשנות את מספרם בחופשיות: אין מסד נתונים בצד השרת שצריך להעביר או לגבות. כדאי להיות מוכנים לשאלת ההמשך: \"מה ישתנה אם משתמשים יצטרכו להתחבר מכמה מכשירים?\" (מסד נתונים אמיתי והתחברות)."
+
+  proj-pipe-001:
+    prompt: למה בחרתם ב-GitOps עם Argo CD (מודל pull), ולא שה-CI יריץ `kubectl apply` או `helm upgrade`?
+    keyPoints:
+      - "אבטחה: ה-CI לא צריך פרטי גישה ל-cluster; ה-cluster מושך מ-Git"
+      - "מעשי: ה-runners של GitHub לא מגיעים ל-cluster על מחשב נייד או ברשת פרטית"
+      - "Git הוא מקור האמת ויומן הביקורת: מי פרס מה ומתי; חזרה לאחור = git revert"
+      - "self-heal מבטל שינויים ידניים; prune מוחק משאבים שהוסרו"
+    modelAnswer: |
+      שתי סיבות.
+      **מעשית**: ה-runners של GitHub לא יכולים להגיע ל-cluster שרץ על המחשב שלי. וגם בחברה אמיתית לא רוצים שה-CI יחזיק הרשאות cluster-admin.
+      עם GitOps ה-cluster מושך: Argo CD רץ בתוך ה-cluster ועוקב אחרי Git, וה-CI צריך רק הרשאה לדחוף image ו-commit.
+      **מודל טוב יותר**: Git הופך למקור האמת וליומן של כל פריסה. חזרה לאחור היא `git revert`. עם self-heal, אם מישהו משנה משהו ידנית עם kubectl, Argo CD מחזיר את המצב למה שכתוב ב-Git. ו-prune מוחק משאבים שהוסרו מה-chart.
+    explanation: מודל ה-pull גם מתאים להרבה clusters, כי כל אחד מושך את ההגדרות שלו.
+
+  proj-pipe-002:
+    prompt: סדרו את מה שקורה ב-MyBroker, מ-pull request שמוזג ועד פריסה ל-production.
+    steps:
+      - "הבדיקות של ה-PR ב-ci.yml עוברות, וה-PR ממוזג ל-main"
+      - "release.yml בונה פעם אחת image לכמה ארכיטקטורות, ודוחף אותו ל-GHCR עם התגית sha-<7>"
+      - "ה-workflow עושה commit לתגית החדשה ב-values-staging.yaml; Argo CD מסנכרן את staging"
+      - "תגית v* נותנת תגית נוספת לאותו image, ופותחת PR של קידום ל-values-prod.yaml"
+      - "ה-PR של הקידום נבדק וממוזג; Argo CD מסנכרן את prod"
+    explanation: "בונים פעם אחת ומקדמים את אותו artifact. ה-review הוא האישור, המיזוג הוא הפריסה, ו-revert הוא החזרה לאחור."
+
+  proj-pipe-003:
+    prompt: איך השגתם פריסות בלי השבתה בפרויקט?
+    keyPoints:
+      - "rolling update עם maxUnavailable: 0 (ו-surge), כך שהקיבולת אף פעם לא יורדת"
+      - "readiness probe: pods חדשים מקבלים תעבורה רק כשהם מוכנים; גרסה שבורה עוצרת את העדכון במקום להחזיר שגיאות"
+      - "preStop sleep, כדי לסיים חיבורים פתוחים בצורה מסודרת לפני SIGTERM"
+      - "PDB עם minAvailable, ופיזור בין ה-workers, כך שפינוי node אף פעם לא לוקח את העותק האחרון"
+    modelAnswer: |
+      כמה חלקים ביחד:
+      - **rolling update** עם `maxUnavailable: 0`, כך שבזמן העדכון תמיד יש קיבולת מלאה.
+      - **readiness probe**: pod חדש מקבל תעבורה רק כשהוא באמת מוכן. image שבור רק עוצר את העדכון, וה-pods הישנים ממשיכים לשרת. הדגמתי את זה עם גרסה שבורה בכוונה וחזרה לאחור.
+      - **preStop sleep**: נותן ל-ingress זמן להפסיק לשלוח ל-pod לפני שהוא מקבל SIGTERM, כך שבקשות באמצע מסתיימות.
+      - **PodDisruptionBudget** עם `minAvailable: 1`, יחד עם פיזור בין שני ה-workers. כך פינוי node לתחזוקה אף פעם לא מוריד את העותק האחרון.
+    explanation: "ה-targets ‏`chaos-pod`, `chaos-node` ו-`chaos-bad` ב-Makefile מדגימים כל אחד מאלה."
+
+  proj-pipe-004:
+    prompt: גרסה גרועה הגיעה ל-production בפרויקט שלכם. איך חוזרים לגרסה הקודמת, ולמה לא פשוט ללחוץ "rollback" ב-Argo CD?
+    keyPoints:
+      - "עושים revert ל-commit ששינה את תגית ה-image של prod (values-prod.yaml); Argo CD מסנכרן את הגרסה הקודמת"
+      - "Git נשאר מקור האמת, ויש תיעוד של החזרה לאחור"
+      - "עם auto-sync ו-self-heal, חזרה ידנית ב-UI או ב-kubectl תחזור למה שכתוב ב-Git (או שצריך קודם לעצור את ה-auto-sync)"
+      - "readiness probes ו-maxUnavailable 0 גורמים לגרסה שנכשלת ב-readiness לעצור במקום להפיל את prod; בודקים בדשבורדים ובהתראות שהמצב חזר לתקין"
+    modelAnswer: |
+      ב-production רצה התגית שכתובה ב-`values-prod.yaml`. לכן החזרה היא `git revert` ל-commit של הקידום, דרך PR מהיר. Argo CD רואה את השינוי ומסנכרן את התגית הקודמת, שכבר נמצאת ב-GHCR, אז זה מהיר.
+      לא חוזרים מה-UI של Argo CD או עם kubectl, כי auto-sync עם self-heal יחזיר את ה-cluster מיד למה שכתוב ב-Git. צריך לעצור קודם את ה-auto-sync, ואז Git וה-cluster לא מסכימים. revert שומר את Git כמקור האמת, ומתעד מי החזיר ולמה.
+      התכנון גם מגביל את הנזק: גרסה שה-pods שלה לא נהיים ready עוצרת את העדכון, וה-pods הישנים ממשיכים לשרת.
+      אחרי ה-revert עוקבים אחרי הדשבורד ב-Grafana ואחרי ההתראות, כדי לוודא שאחוז השגיאות חזר לרגיל.
+    explanation: "\"חזרה לאחור היא git revert\" זו התשובה הקצרה שמצפים לשמוע ממי שעבד עם GitOps."
+
+  proj-ops-001:
+    prompt: איך אבטחתם את ה-workloads בפרויקט?
+    keyPoints:
+      - "image: בנייה בכמה שלבים, base מינימלי של Alpine, משתמש שאינו root, סריקת Trivy ב-CI שנכשלת על HIGH/CRITICAL שיש להן תיקון, hadolint, SBOM ו-provenance"
+      - "pod: Pod Security Standard ברמת restricted; runAsNonRoot, מערכת קבצים לקריאה בלבד, בלי capabilities, seccomp RuntimeDefault, בלי token של ServiceAccount"
+      - "רשת: NetworkPolicy של חסימה כברירת מחדל; נכנס רק מ-Traefik ומ-Prometheus, יוצא רק DNS ו-HTTPS"
+      - "secrets נוצרים ב-Terraform (לא ב-Git); ה-endpoint של המטריקות מוגן ב-bearer token; AppProject של Argo CD מגביל מקורות ויעדים"
+    modelAnswer: |
+      בשכבות:
+      - **image**: בנייה בכמה שלבים, על base מינימלי של Alpine, רץ כמשתמש שאינו root. hadolint בודק את ה-Dockerfile, ו-Trivy ב-CI מכשיל את הבנייה על חולשות חמורות שיש להן תיקון. ל-images של release מצורפים SBOM ו-provenance.
+      - **pod**: ה-namespaces אוכפים את Pod Security Standard ברמת "restricted": pods רצים כמשתמש שאינו root, מערכת הקבצים הראשית לקריאה בלבד, כל ה-capabilities של Linux מבוטלות, פרופיל seccomp של RuntimeDefault, ובלי token של ServiceAccount.
+      - **רשת**: NetworkPolicy של חסימה כברירת מחדל. רק Traefik ו-Prometheus יכולים להתחבר פנימה, והחוצה מותר רק DNS ו-HTTPS לכתובות ציבוריות.
+      - **secrets**: נוצרים ב-Terraform ולא נכנסים ל-Git. ה-endpoint של המטריקות דורש bearer token שרק ל-Prometheus יש. ה-AppProject של Argo CD מרשה רק את ה-repo הזה ואת ה-namespaces של mybroker.
+    explanation: "כדאי לדעת לפחות פרט מוחשי אחד בכל שכבה. מראיינים אוהבים \"מערכת קבצים לקריאה בלבד, ולכן /tmp הוא emptyDir\"."
+
+  proj-ops-002:
+    prompt: מה אתם מנטרים ועל מה אתם מתריעים בפרויקט, ולמה בדיקות התקינות שלכם לא פונות ל-API חיצוניים?
+    keyPoints:
+      - "מטריקות של האפליקציה ב-/api/metrics (prom-client): בקשות וזמני תגובה לכל route, קריאות לספקים לפי תוצאה, פגיעות ב-cache, נתוני runtime"
+      - "דשבורד ב-Grafana עם golden signals; ServiceMonitor כדי ש-Prometheus ימצא את האפליקציה"
+      - "התראות: אין pods תקינים, לולאת קריסות, שגיאות מעל 5%, p95 מעל 2 שניות, ספק נכשל, HPA במקסימום"
+      - "בדיקת התקינות עונה מהזיכרון, כדי שתקלה אצל הספק לא תגרום לגל של הפעלות מחדש; כישלונות של הספק הם התראה"
+    modelAnswer: |
+      האפליקציה חושפת מטריקות של Prometheus ב-`/api/metrics`: מספר בקשות וזמני תגובה לכל route של ה-API, קריאות לכל ספק נתונים עם התוצאה שלהן, פגיעות והחטאות ב-cache, ומטריקות של Node.js.
+      ServiceMonitor ב-chart רושם אותה ב-Prometheus, ודשבורד של Grafana נמצא ב-ConfigMap, עם ה-golden signals, קודי סטטוס, תקינות הספקים, משאבים לכל pod ומספר העותקים של ה-HPA.
+      חוקי ההתראה מכסים: אין pods תקינים, לולאת קריסות, שגיאות מעל 5%, זמן תגובה p95 מעל 2 שניות, ספק נתונים שנכשל ביותר ממחצית הבקשות, ו-HPA שתקוע במקסימום. כל אחת מפנה לסעיף ב-runbook.
+      `/api/health` עונה בכוונה מהזיכרון. אם Yahoo נופל, לא רוצים ש-Kubernetes יפעיל מחדש pods תקינים לגמרי. המצב הזה הוא התראה, לא כישלון של probe.
+    explanation: הנקודה האחרונה (liveness מול תקינות של שירותים חיצוניים) היא החלטת תכנון בוגרת. חשוב להזכיר אותה.
+
+  proj-ops-003:
+    prompt: ספרו על בעיה טכנית שנתקלתם בה בזמן בניית הפרויקט, ואיך פתרתם אותה.
+    keyPoints:
+      - "מתאר בעיה מוחשית ואמיתית (למשל ה-provider של kubectl שובר יצירת cluster ב-apply אחד, שינויי values ב-Traefik chart v41, מצב ישן של NetworkPolicy ב-kindnet)"
+      - "איך אבחנתם (שגיאות, תיעוד, קריאת ה-values של ה-chart, בדיקת השערות)"
+      - "התיקון, ולמה הוא עובד"
+      - "מה למדתם ואיך מונעים חזרה (תיעוד ב-runbook, make target)"
+    modelAnswer: |
+      דוגמה אחת: רציתי שכל הפלטפורמה תיווצר ב-`terraform apply` אחד, אבל ה-provider של kubectl, שבו השתמשתי בהתחלה למשאבים מותאמים (כמו ה-ClusterIssuer של cert-manager וה-Application הראשי של Argo CD), שבר את זה. הוא צריך לדבר עם ה-cluster כבר בזמן ה-plan, לפני שה-cluster בכלל קיים.
+      אבחנתי את זה משגיאות ה-plan ומהתיעוד של ה-provider. התיקון: לעטוף את האובייקטים האלה ב-Helm charts מקומיים וקטנים, שמותקנים דרך ה-provider של helm. הוא יוצר אותם רק בזמן ה-apply, אחרי שה-CRDs כבר קיימים.
+      עוד דוגמה: אחרי ש-Docker Desktop נכנס לשינה, אכיפת ה-NetworkPolicy של kind נשארה עם מצב ישן וחסמה תעבורה שהייתה צריכה לעבור. מצאתי את זה בבדיקת חיבור בין pods, והוספתי `make fix-netpol` וסעיף ב-runbook, כך שהתיקון הוא פקודה אחת.
+    explanation: משתמשים ב-STAR (Situation, Task, Action, Result) ומדייקים. הודעות שגיאה אמיתיות ודרך האבחון חשובות יותר מסיפור מלוטש.
+
+  proj-ops-004:
+    prompt: אם היה לכם עוד חודש לעבוד על הפרויקט, מה הייתם משפרים, ולמה?
+    keyPoints:
+      - "בוחר כמה שיפורים מוחשיים ומסביר את הסיבה לכל אחד, לא רק רשימה של כלים"
+      - "מוכנות ל-production: ענן אמיתי (EKS), state מרוחק ל-Terraform עם נעילה, secrets ממנהל secrets (External Secrets)"
+      - "פריסה בטוחה יותר: canary עם בדיקה אוטומטית (למשל Argo Rollouts)"
+      - "ניטור: לוגים מרוכזים (למשל Loki) ו/או tracing; שרשרת אספקה: חתימת images (cosign) ומדיניות קבלה (Kyverno)"
+      - "קובע סדר עדיפויות: מה קודם, ולמה"
+    modelAnswer: |
+      _(דוגמה. בחרו את מה שאתם באמת יכולים לדבר עליו.)_
+      **קודם**, מעבר לענן אמיתי: EKS דרך modules של Terraform, state מרוחק ב-S3 עם נעילה, ו-secrets שמגיעים מ-AWS Secrets Manager דרך External Secrets במקום מ-Terraform. זה הפער הכי גדול בין הדגמה ל-production.
+      **שנית**, פריסות בטוחות יותר: canary עם Argo Rollouts, שבודק את אחוז השגיאות ב-Prometheus וחוזר אחורה אוטומטית. היום גרסה גרועה שעוברת readiness מגיעה לכולם.
+      **שלישית**, לוגים מרוכזים עם Loki, כדי לחפש לוגים מכל ה-pods ב-Grafana, ליד המטריקות.
+      אם יישאר זמן: חתימה על images עם cosign, ומדיניות ב-Kyverno שמרשה רק images חתומים.
+      נקודת ההתחלה היא המעבר לענן, כי כל השאר נבנה עליו.
+    explanation: "מראיינים שואלים את זה כדי לראות אם אתם מכירים את הגבולות של העבודה שלכם. סיבה וסדר חשובים יותר ממספר הכלים."

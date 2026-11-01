@@ -1,0 +1,416 @@
+topic: observability
+questions:
+  - id: obs-pillars-001
+    type: open
+    subtopic: pillars
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: What are the three pillars of observability, and what is each good for?
+    rubric:
+      keyPoints:
+        - { text: "Metrics: numeric time series (rates, latencies, usage); cheap, good for dashboards, trends and alerting", weight: 3 }
+        - { text: "Logs: timestamped event records with detail; good for debugging what happened", weight: 3 }
+        - { text: "Traces: follow one request across services (spans) to see where time is spent / where it failed", weight: 3 }
+        - { text: "They're used together: alert on metrics → find the slow service via traces → read its logs", weight: 1 }
+    modelAnswer: |
+      **Metrics** are numbers over time, like requests per second, error rate, latency percentiles and CPU. They're cheap to store and query, so they drive dashboards and alerts. **Logs** are individual event records with details, like the exception and the request ID; they tell you *what exactly* happened. **Traces** follow a single request through all the services it touches, as a tree of spans with timings, so in a microservice system you can see which hop was slow or failed. You use them together: an alert on a metric fires, a trace shows which service is the problem, and that service's logs show why. Correlating them with a shared trace or request ID makes that fast.
+    explanation: "Common stack: Prometheus plus Grafana for metrics, Loki or ELK for logs, Tempo or Jaeger for traces, with OpenTelemetry as the vendor-neutral instrumentation standard."
+
+  - id: obs-pillars-002
+    type: mcq
+    subtopic: pillars
+    level: 2
+    prompt: "What are the \"four golden signals\" (Google SRE) for monitoring a service?"
+    options: ["Latency, traffic, errors, saturation", "CPU, memory, disk, network", "Uptime, downtime, MTTR, MTBF", "Logs, metrics, traces, events"]
+    correct: [0]
+    explanation: "Related frameworks: **RED** (Rate, Errors, Duration) for request-driven services, and **USE** (Utilization, Saturation, Errors) for resources like CPU and disks."
+
+  - id: obs-prom-001
+    type: open
+    subtopic: prometheus
+    level: 1
+    tags: [your-stack]
+    prompt: How does Prometheus collect metrics? Explain the pull model, exporters and targets.
+    rubric:
+      keyPoints:
+        - { text: "Prometheus scrapes (pulls) HTTP /metrics endpoints of targets on an interval", weight: 3 }
+        - { text: "Targets come from static config or service discovery (Kubernetes, ServiceMonitors with the Prometheus Operator)", weight: 2 }
+        - { text: "Exporters expose metrics for things that don't natively (node_exporter, blackbox, DB exporters); apps expose their own with client libraries", weight: 3 }
+        - { text: "Stores time series with labels in its TSDB; Pushgateway for short-lived jobs", weight: 2 }
+    modelAnswer: |
+      Prometheus pulls. Every scrape interval, say 30 seconds, it makes an HTTP request to each target's `/metrics` endpoint and stores the returned samples as time series identified by a metric name and labels, like `http_requests_total{method="GET",status="200"}`. Targets are found through service discovery; in Kubernetes with the Prometheus Operator you declare ServiceMonitors. Applications expose their own metrics with a client library. For things you can't instrument, you run an **exporter** that translates: node_exporter for host CPU, disk and memory, or a Postgres exporter. Short-lived batch jobs that can't be scraped push to a Pushgateway. The `up` metric tells you whether a scrape worked.
+    explanation: "In MyBroker the app exposes `/api/metrics` via prom-client, a ServiceMonitor in the Helm chart registers it, and kube-prometheus-stack scrapes it."
+
+  - id: obs-prom-002
+    type: mcq
+    subtopic: prometheus
+    level: 2
+    prompt: Which PromQL query gives the per-second rate of HTTP requests over the last 5 minutes, summed per service?
+    options:
+      - "sum by (service) (rate(http_requests_total[5m]))"
+      - "http_requests_total[5m]"
+      - "sum(http_requests_total)"
+      - "avg(http_requests_total) by (service)"
+    correct: [0]
+    explanation: "Counters only go up, so you almost always wrap them in `rate()` (per-second increase, handles counter resets). Then aggregate with `sum by (label)`. Raw counter values are rarely useful."
+
+  - id: obs-prom-003
+    type: mcq
+    subtopic: prometheus
+    level: 2
+    prompt: "Which metric type should you use for request latency if you want to compute p95 across many instances?"
+    options: ["Histogram", "Counter", "Gauge", "Untyped"]
+    correct: [0]
+    explanation: "Histograms count observations in buckets, and `histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))` aggregates correctly across instances. Counters only increase; gauges go up and down (memory, queue length)."
+
+  - id: obs-prom-004
+    type: mcq
+    subtopic: prometheus
+    level: 3
+    prompt: Why is adding a label like `user_id` to a Prometheus metric a bad idea?
+    options:
+      - "Every unique label combination is a separate time series; high-cardinality labels explode memory and storage"
+      - "Labels can't contain numbers"
+      - "Prometheus only supports 3 labels"
+      - "It makes queries case-sensitive"
+    correct: [0]
+    explanation: "Cardinality is the classic Prometheus problem. Keep labels bounded (method, status, route templates, not raw URLs). Put per-user detail in logs or traces."
+
+  - id: obs-graf-001
+    type: open
+    subtopic: grafana-alerting
+    level: 2
+    prompt: What makes a good alert? How do you avoid alert fatigue?
+    rubric:
+      keyPoints:
+        - { text: "Alert on symptoms users feel (error rate, latency, SLO burn) rather than every cause (CPU 80%)", weight: 3 }
+        - { text: "Every page must be actionable and urgent; include a runbook link and context", weight: 3 }
+        - { text: "Use durations (for: 5m) and thresholds to avoid flapping; route by severity (page vs ticket)", weight: 2 }
+        - { text: "Regularly review and delete noisy alerts; group/deduplicate (Alertmanager)", weight: 2 }
+    modelAnswer: |
+      A good alert is urgent and actionable: if it wakes someone up, there must be something they need to do now. That usually means alerting on symptoms users feel, like the error rate above 2%, p95 latency over 500ms, or the SLO error budget burning fast, rather than causes like "CPU is at 80%", which might be totally fine. Each alert should have a `for:` duration so blips don't fire it, a severity (page someone versus open a ticket), and a link to a runbook and dashboard. To fight alert fatigue: review alerts regularly, delete or downgrade the ones nobody acts on, and use Alertmanager grouping, inhibition and silences so one outage doesn't send 50 pages.
+    explanation: "Prometheus evaluates rules → Alertmanager deduplicates and routes → PagerDuty, Slack or email."
+
+  - id: obs-graf-002
+    type: mcq
+    subtopic: grafana-alerting
+    level: 1
+    prompt: What does Alertmanager do in the Prometheus ecosystem?
+    options:
+      - "Receives alerts from Prometheus and deduplicates, groups, silences and routes them to Slack/PagerDuty/email"
+      - "It scrapes metrics"
+      - "It draws dashboards"
+      - "It stores logs"
+    correct: [0]
+    explanation: "Prometheus evaluates the alert rules. Alertmanager handles the notifications. Grafana visualizes (and can also alert)."
+
+  - id: obs-slo-001
+    type: open
+    subtopic: slos
+    level: 2
+    tags: [il-common]
+    prompt: Explain SLI, SLO and SLA, and what an error budget is.
+    rubric:
+      keyPoints:
+        - { text: "SLI: a measured indicator of service level (e.g. % of successful requests, % under 300ms)", weight: 3 }
+        - { text: "SLO: the internal target for an SLI over a window (99.9% over 30 days)", weight: 3 }
+        - { text: "SLA: an external contract with customers, with penalties; looser than the SLO", weight: 2 }
+        - { text: "Error budget = 100% − SLO (e.g. 0.1% ≈ 43 min/month); spend it on releases; when exhausted, focus on reliability", weight: 3 }
+    modelAnswer: |
+      An **SLI** is a measurement of how the service behaves for users, like the percentage of requests that succeed or that respond within 300ms. An **SLO** is our target for that SLI over a time window, for example 99.9% of requests succeed over 30 days. An **SLA** is the contract with customers, with consequences like refunds if it's broken, so it's set looser than the internal SLO. The **error budget** is what the SLO allows to fail: 0.1%, which is about 43 minutes of full downtime per month. While there's budget left, the team can ship fast and take risks. If it's used up, the team slows releases and prioritizes reliability work. It turns reliability into a shared, data-driven decision between product and engineering.
+    explanation: "Nines: 99% ≈ 7.3 h/month, 99.9% ≈ 43 min, 99.99% ≈ 4.3 min."
+
+  - id: obs-slo-002
+    type: mcq
+    subtopic: slos
+    level: 2
+    prompt: A service has an SLO of 99.9% availability per 30 days. Roughly how much downtime does that allow?
+    options: ["About 43 minutes", "About 7 hours", "About 4 minutes", "About 1 day"]
+    correct: [0]
+    explanation: "30 days ≈ 43,200 minutes; 0.1% of that ≈ 43.2 minutes."
+
+  - id: obs-log-001
+    type: open
+    subtopic: logging
+    level: 2
+    prompt: How should applications in Kubernetes log, and how do logs get to a central system?
+    rubric:
+      keyPoints:
+        - { text: "Apps log to stdout/stderr (not files inside the container)", weight: 3 }
+        - { text: "Structured logs (JSON) with level, timestamp, request/trace ID", weight: 2 }
+        - { text: "The container runtime writes them to files on the node; a DaemonSet agent (Fluent Bit/Promtail/Vector/OTel collector) ships them", weight: 3 }
+        - { text: "To a central store (Loki, Elasticsearch/OpenSearch, CloudWatch) with retention", weight: 2 }
+    modelAnswer: |
+      Apps should log to stdout and stderr, not to files in the container, which disappear with the pod and fill the disk. Use structured JSON logs with a level, timestamp, service name and the request or trace ID, so they can be searched and correlated. The container runtime writes each container's output to files on the node, and a log agent running as a DaemonSet on every node, like Fluent Bit, Promtail, Vector or the OpenTelemetry Collector, tails those files, adds Kubernetes metadata like the namespace, pod and labels, and ships them to a central store such as Loki, Elasticsearch/OpenSearch or CloudWatch Logs. There you search, build dashboards and set retention. `kubectl logs` is only for quick looks.
+    explanation: "ELK = Elasticsearch + Logstash + Kibana. Loki indexes only the labels, which makes it cheaper, and pairs naturally with Grafana."
+
+  - id: obs-log-002
+    type: mcq
+    subtopic: logging
+    level: 1
+    prompt: Why are structured (JSON) logs preferred over free-text log lines?
+    options:
+      - "They can be parsed, filtered and aggregated by field (level, user, latency) reliably without fragile regexes"
+      - "They're smaller"
+      - "They're required by Linux"
+      - "They can't contain errors"
+    correct: [0]
+    explanation: "`{\"level\":\"error\",\"route\":\"/pay\",\"latency_ms\":812,\"trace_id\":\"…\"}` lets you query `level=error AND route=/pay` directly."
+
+  - id: obs-pillars-003
+    type: mcq
+    subtopic: pillars
+    level: 1
+    prompt: What is the difference between monitoring and observability?
+    options:
+      - "Monitoring watches known problems with predefined checks and alerts; observability lets you investigate new, unexpected problems from the data the system emits"
+      - "They mean exactly the same thing"
+      - "Monitoring is for servers, observability is only for databases"
+      - "Observability is a paid version of monitoring"
+    correct: [0]
+    explanation: "Monitoring answers 'is X broken?'. Observability (rich metrics, logs and traces with context) helps answer 'why is this weird thing happening?'."
+
+  - id: obs-pillars-004
+    type: mcq
+    subtopic: pillars
+    level: 2
+    prompt: Why is the average response time a poor latency metric?
+    options:
+      - "It hides the slow tail; a few very slow requests barely move the average, so you watch percentiles like p95 and p99"
+      - "Averages can't be computed in Prometheus"
+      - "The average is always zero"
+      - "It only works for databases"
+    correct: [0]
+    explanation: "If 99% of requests take 50ms and 1% take 5s, the average looks fine while 1 in 100 users waits 5 seconds. p95/p99 show that."
+
+  - id: obs-prom-005
+    type: mcq
+    subtopic: prometheus
+    level: 1
+    prompt: Which Prometheus metric type is right for "number of requests served since start"?
+    options: ["Counter", "Gauge", "Histogram", "Summary"]
+    correct: [0]
+    explanation: "A counter only goes up (and resets to 0 on restart). A gauge goes up and down, like memory in use or queue length."
+
+  - id: obs-prom-006
+    type: mcq
+    subtopic: prometheus
+    level: 2
+    prompt: What does the `up` metric tell you?
+    options:
+      - "Whether Prometheus' last scrape of that target succeeded (1) or failed (0)"
+      - "How long the server has been running"
+      - "The CPU usage"
+      - "The number of users online"
+    correct: [0]
+    explanation: "`up == 0` is the basic 'target down' alert. It means Prometheus couldn't reach `/metrics`: the app is down, the port is wrong, or a NetworkPolicy blocks it."
+
+  - id: obs-prom-007
+    type: open
+    subtopic: prometheus
+    level: 2
+    prompt: Write (or describe) a PromQL query for the percentage of HTTP requests that returned a 5xx error over the last 5 minutes.
+    rubric:
+      keyPoints:
+        - { text: "Use rate() over a 5m window on the request counter", weight: 3 }
+        - { text: "Filter 5xx with a label matcher like status=~\"5..\"", weight: 3 }
+        - { text: "Divide errors by all requests (and multiply by 100 for percent)", weight: 2 }
+        - { text: "Use sum (or sum by service) on both sides so the division lines up", weight: 1 }
+    modelAnswer: |
+      `100 * sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))`. The top part is the per-second rate of requests with a 5xx status, the bottom part is the rate of all requests, and the ratio times 100 is the error percentage. Adding `by (service)` to both sums gives it per service. That ratio is exactly what you'd use in an alert like "error rate above 5% for 5 minutes".
+    explanation: "`=~` is a regex match on a label. `rate()` handles counter resets, so it's always used with counters."
+
+  - id: obs-graf-003
+    type: mcq
+    subtopic: grafana-alerting
+    level: 1
+    prompt: What is Grafana mainly used for?
+    options: ["Dashboards and graphs over metrics, logs and traces from many data sources", "Collecting metrics from servers", "Storing logs", "Running CI pipelines"]
+    correct: [0]
+    explanation: "Grafana doesn't store the data itself. It queries sources like Prometheus, Loki, CloudWatch or Elasticsearch and visualizes them. It can also alert."
+
+  - id: obs-graf-004
+    type: mcq
+    subtopic: grafana-alerting
+    level: 2
+    prompt: 'Why add `for: 5m` to a Prometheus alert rule?'
+    options:
+      - "The condition must stay true for 5 minutes before the alert fires, so short spikes don't page anyone"
+      - "The alert is repeated every 5 minutes"
+      - "The alert expires after 5 minutes"
+      - "Prometheus checks the rule every 5 minutes"
+    correct: [0]
+    explanation: "Without `for`, a single bad scrape could wake someone up. Pick the duration based on how urgent the symptom is."
+
+  - id: obs-slo-003
+    type: mcq
+    subtopic: slos
+    level: 2
+    prompt: Which is a good SLI for a web API?
+    options:
+      - "The percentage of requests that succeed and respond in under 300 ms"
+      - "The number of servers"
+      - "The CPU usage of the database"
+      - "The number of deploys per week"
+    correct: [0]
+    explanation: "SLIs should reflect what users experience (success, speed). CPU is a cause you investigate, not something users feel."
+
+  - id: obs-slo-004
+    type: open
+    subtopic: slos
+    level: 3
+    prompt: The error budget for this month is used up after two bad releases. What should the team do?
+    rubric:
+      keyPoints:
+        - { text: "Slow down risky changes: freeze or limit feature releases until the budget recovers (per the agreed policy)", weight: 3 }
+        - { text: "Focus engineering time on reliability: fix the causes found in the postmortems", weight: 3 }
+        - { text: "Improve the release process: better tests, canary releases, automatic rollback", weight: 2 }
+        - { text: "It's a data-driven agreement between product and engineering, not a punishment", weight: 1 }
+    modelAnswer: |
+      The error budget is the agreed amount of unreliability. When it's gone, the team has used up its room for risk. The usual policy is to pause or limit new feature releases until the budget recovers, and to put that time into reliability: fixing the causes found in the two postmortems, adding the missing tests and alerts. It's also a reason to improve the release process itself, like canary releases with automatic rollback, so the next bad release hurts fewer users. The point is that product and engineering agreed on this in advance, so it's a data-driven decision rather than an argument.
+    explanation: Error budgets make the speed vs. stability trade-off explicit and measurable.
+
+  - id: obs-log-003
+    type: mcq
+    subtopic: logging
+    level: 1
+    prompt: What is Loki?
+    options:
+      - "A log storage system by Grafana Labs that indexes only labels, making it cheaper to run, and is queried from Grafana"
+      - "A metrics database"
+      - "A tracing tool"
+      - "A log shipper that runs on every node"
+    correct: [0]
+    explanation: "Promtail, Grafana Alloy or Fluent Bit ship the logs; Loki stores them; Grafana queries them with LogQL."
+
+  - id: obs-log-004
+    type: open
+    subtopic: logging
+    level: 2
+    prompt: What is a correlation (request/trace) ID, and why is it useful?
+    rubric:
+      keyPoints:
+        - { text: "A unique ID generated for each incoming request and passed along to every service it calls (header)", weight: 3 }
+        - { text: "Every log line includes it", weight: 2 }
+        - { text: "Lets you find all logs of one request across many services, and connect logs to traces", weight: 3 }
+    modelAnswer: |
+      When a request enters the system, the first service gives it a unique ID, or takes it from an incoming header, and passes it on in a header to every service it calls. Every log line written while handling that request includes the ID. Then, when a user reports an error, you search the ID and see the whole path of that one request through all the services, in order. With OpenTelemetry the trace ID plays this role, and it links logs to the matching trace.
+    explanation: "Without it, finding one failing request among thousands of log lines from ten services is guesswork."
+
+  - id: obs-log-005
+    type: mcq
+    subtopic: logging
+    level: 2
+    prompt: Your logs fill the disk and cost a lot to store. Which are sensible fixes? (Select all.)
+    options:
+      - "Set retention periods (keep detailed logs for days, not forever)"
+      - "Lower the log level from debug to info in production"
+      - "Sample very noisy, low-value logs"
+      - "Turn off all logging"
+    correct: [0, 1, 2]
+    explanation: "Keep what helps debugging and auditing. Debug logs in production and no retention are the classic cost and disk-full problems."
+
+  # ---------- Added: basics ----------
+  - id: obs-pillars-005
+    type: mcq
+    subtopic: pillars
+    level: 1
+    prompt: In distributed tracing, what are a trace and a span?
+    options:
+      - "A trace is the whole journey of one request through all services; a span is one step in it (one service call or operation) with its duration"
+      - "A trace is a log file; a span is a log line"
+      - "A trace is a metric; a span is its label"
+      - "They are alert types"
+    correct: [0]
+    explanation: "Traces show where time is spent: e.g. 1.8 of 2 seconds was a slow database query in the payment service. OpenTelemetry is the standard way to produce them; Jaeger and Tempo store them."
+
+  - id: obs-prom-008
+    type: mcq
+    subtopic: prometheus
+    level: 1
+    prompt: What is a Prometheus exporter?
+    options:
+      - "A small program that exposes metrics of something that doesn't speak Prometheus (a Linux host, MySQL, nginx) on a /metrics endpoint"
+      - "A tool that exports Grafana dashboards to PDF"
+      - "A backup tool for Prometheus data"
+      - "A plugin that sends alerts by email"
+    correct: [0]
+    explanation: "node_exporter exposes CPU, memory, disk and network of a Linux machine. Your own apps expose metrics directly with a client library instead."
+
+  - id: obs-prom-009
+    type: mcq
+    subtopic: prometheus
+    level: 1
+    prompt: "In `http_requests_total{method=\"GET\", status=\"500\"}`, what are `method` and `status`?"
+    options:
+      - "Labels: key-value pairs that split one metric into separate time series you can filter and group by"
+      - "Separate metrics"
+      - "Comments"
+      - "Alert names"
+    correct: [0]
+    explanation: "Labels let you ask `sum by (status) (rate(http_requests_total[5m]))`. Every unique label combination is a separate series, so keep labels to a small set of values."
+
+  - id: obs-prom-010
+    type: mcq
+    subtopic: prometheus
+    level: 2
+    prompt: Why do you almost always wrap a counter in `rate()` instead of looking at its raw value?
+    options:
+      - "A counter only goes up (and resets to 0 when the app restarts); rate() gives the per-second speed and handles the resets"
+      - "Raw counter values are encrypted"
+      - "rate() makes queries cheaper"
+      - "Counters can't be shown in Grafana"
+    correct: [0]
+    explanation: "A raw value like 1,284,553 total requests tells you little. `rate(...[5m])` tells you \"42 requests per second right now\". Use `increase()` for \"how many in the last hour\"."
+
+  - id: obs-graf-005
+    type: mcq
+    subtopic: grafana-alerting
+    level: 1
+    prompt: What should a good alert notification include? (Select all.)
+    options:
+      - "What is wrong and how bad it is (summary and severity)"
+      - "Which service or environment is affected"
+      - "A link to a runbook or dashboard"
+      - "The full application source code"
+    correct: [0, 1, 2]
+    explanation: "The person woken up at 3 a.m. should know within seconds what's broken and where to start. Alertmanager templates and annotations like `runbook_url` help."
+
+  - id: obs-graf-006
+    type: mcq
+    subtopic: grafana-alerting
+    level: 2
+    prompt: Which of these should page (wake up) the on-call engineer?
+    options:
+      - "Users are getting errors: the error rate has been above 5% for 5 minutes"
+      - "One server's CPU is at 85%"
+      - "A pod restarted once"
+      - "Disk usage is at 60%"
+    correct: [0]
+    explanation: "Page on **symptoms** users feel (errors, latency, availability). Causes like high CPU go to dashboards or low-priority tickets. Disk filling up fast is the exception: alert on predicted time to full."
+
+  - id: obs-slo-005
+    type: mcq
+    subtopic: slos
+    level: 1
+    prompt: What's the difference between an SLO and an SLA?
+    options:
+      - "An SLO is an internal reliability target; an SLA is a promise in a contract, with penalties (like refunds) if it's missed"
+      - "They are the same thing"
+      - "An SLA is internal; an SLO is in the contract"
+      - "An SLO is only for databases"
+    correct: [0]
+    explanation: "The SLO is usually stricter than the SLA (e.g. SLO 99.95%, SLA 99.9%), so you notice problems and react before you owe customers money."
+
+  - id: obs-log-006
+    type: mcq
+    subtopic: logging
+    level: 1
+    prompt: Which log level setting is usual for an application in production?
+    options:
+      - "INFO (with WARN and ERROR); DEBUG only temporarily, when investigating a problem"
+      - "DEBUG all the time, to have everything"
+      - "No logging at all"
+      - "Only FATAL"
+    correct: [0]
+    explanation: "DEBUG in production creates huge volumes, costs money and can leak sensitive data. Make the level configurable (an env var) so you can raise it without a new build."

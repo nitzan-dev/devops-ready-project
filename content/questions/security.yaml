@@ -1,0 +1,413 @@
+topic: security
+questions:
+  - id: sec-secrets-001
+    type: open
+    subtopic: secrets
+    level: 1
+    tags: [il-common]
+    prompt: Where should application secrets (DB passwords, API keys) live, and where should they never be?
+    rubric:
+      keyPoints:
+        - { text: "Never in source code, Git history, Docker images, or plain CI logs", weight: 3 }
+        - { text: "In a secret manager (Vault, AWS Secrets Manager/SSM Parameter Store, Azure Key Vault) with access control and audit", weight: 3 }
+        - { text: "Injected at runtime (env vars or mounted files) via workload identity/roles; CI secrets via the CI secret store or OIDC", weight: 2 }
+        - { text: "Rotation, least privilege, and short-lived/dynamic credentials where possible", weight: 2 }
+    modelAnswer: |
+      Secrets should never be in the code, in Git (history included), baked into Docker images or printed in CI logs, because all of those get copied and shared widely. They belong in a secret manager like HashiCorp Vault, AWS Secrets Manager or SSM Parameter Store, which encrypts them, controls who can read them and audits every access. At runtime the app gets them injected: in Kubernetes via External Secrets or the CSI driver into a Secret or a file, using the pod's identity (IRSA) rather than another stored key. CI uses its encrypted secrets store or, better, OIDC with no stored secret at all. And secrets should be rotated regularly; dynamic, short-lived credentials (Vault database secrets) are even better.
+    explanation: "Scan for leaks automatically: gitleaks or trufflehog in pre-commit and CI, and GitHub push protection."
+
+  - id: sec-secrets-002
+    type: mcq
+    subtopic: secrets
+    level: 1
+    prompt: "You find `DB_PASSWORD=hunter2` in a Dockerfile `ENV` line in an image pushed to a registry. Why is that a problem even if the repo is private?"
+    options:
+      - "Anyone who can pull the image can read it with docker inspect/history; images get copied, cached and shared"
+      - "ENV variables slow down containers"
+      - "Docker encrypts ENV values, so it's fine"
+      - "It's only a problem on Windows"
+    correct: [0]
+    explanation: Image config and layers are readable by anyone with pull access. Rotate the password, then inject it at runtime instead.
+
+  - id: sec-lp-001
+    type: open
+    subtopic: least-privilege
+    level: 1
+    tags: [il-common]
+    prompt: What does the principle of least privilege mean? Give three concrete DevOps examples.
+    rubric:
+      keyPoints:
+        - { text: "Every identity (person, service, pipeline) gets only the permissions it needs, for as long as it needs them", weight: 3 }
+        - { text: "Example: scoped IAM policies (specific actions/resources) instead of *:*", weight: 2 }
+        - { text: "Example: Kubernetes RBAC namespace-scoped roles; non-root containers; dropped capabilities", weight: 2 }
+        - { text: "Example: CI with short-lived OIDC credentials limited to one role/repo/branch; no shared admin accounts", weight: 2 }
+        - { text: "Limits blast radius if something is compromised", weight: 1 }
+    modelAnswer: |
+      Least privilege means every identity, whether a person, a service or a pipeline, gets only the permissions it actually needs, only where it needs them, and ideally only for as long as it needs them. That way a compromised component can do limited damage. Examples: an app's IAM role allows `s3:GetObject` on one bucket instead of `s3:*`; Kubernetes service accounts get namespace-scoped Roles instead of cluster-admin, and containers run as non-root with all capabilities dropped; and the deploy pipeline assumes a role through OIDC that only the main branch of one repo can use, instead of a shared admin access key. For people: no daily use of admin accounts, with just-in-time elevation through SSO.
+    explanation: Start from deny-all and add what's needed, guided by real usage (IAM Access Analyzer can generate a policy from CloudTrail activity).
+
+  - id: sec-sc-001
+    type: open
+    subtopic: supply-chain
+    level: 2
+    prompt: What is software supply chain security? Name practices to protect a container-based pipeline.
+    rubric:
+      keyPoints:
+        - { text: "Attacks via dependencies, base images, build tools or CI (not your own code): e.g. malicious packages, compromised actions", weight: 2 }
+        - { text: "Scan dependencies and images for CVEs (Trivy, Grype, Dependabot/Renovate for updates)", weight: 3 }
+        - { text: "Pin versions/digests (base images, GitHub Actions by SHA), use trusted minimal base images", weight: 2 }
+        - { text: "Generate SBOMs and sign images / provenance (cosign, SLSA), verify signatures at deploy (admission policy)", weight: 2 }
+        - { text: "Least-privilege CI tokens, protected branches, reviewed changes", weight: 1 }
+    modelAnswer: |
+      Supply chain security is about everything that goes into your software that you didn't write yourself: open-source dependencies, base images, build tools and the CI system itself. Attacks like malicious npm packages or a compromised GitHub Action target exactly that. Practices: scan dependencies and images for known vulnerabilities in CI (Trivy, Grype) and keep them updated with Dependabot or Renovate; pin versions, use image digests and pin third-party Actions to commit SHAs; use minimal, trusted base images; generate an SBOM so you know what's inside every image; sign images and attach provenance with cosign/SLSA, then verify signatures before deploy with an admission policy like Kyverno; and lock down CI itself with least-privilege tokens, protected branches and required reviews.
+    explanation: "MyBroker pins the Trivy action to an immutable release after a real 2026 compromise of trivy-action. A good concrete example to mention."
+
+  - id: sec-sc-002
+    type: mcq
+    subtopic: supply-chain
+    level: 1
+    prompt: "Trivy reports 40 vulnerabilities in your image, 3 of them CRITICAL with a fix available. What's a sensible CI policy?"
+    options:
+      - "Fail the build on fixable HIGH/CRITICAL findings; track the rest; rebuild regularly to pick up base image patches"
+      - "Ignore scanners; they're always noisy"
+      - "Fail on every vulnerability of any severity"
+      - "Only scan once a year"
+    correct: [0]
+    explanation: "Gating on fixable high-severity findings keeps signal high. Often the fix is just updating the base image or a dependency. Use a reviewed `.trivyignore` for accepted risks."
+
+  - id: sec-tls-001
+    type: open
+    subtopic: tls
+    level: 2
+    tags: [your-stack]
+    prompt: How do you manage TLS certificates in Kubernetes, and how do you avoid expired-certificate outages?
+    rubric:
+      keyPoints:
+        - { text: "cert-manager issues and renews certificates automatically (Issuer/ClusterIssuer, Certificate resources, Ingress annotations)", weight: 3 }
+        - { text: "ACME/Let's Encrypt (HTTP-01 or DNS-01 challenge) or an internal CA", weight: 2 }
+        - { text: "Renewal well before expiry; monitor expiry with alerts (cert-manager metrics, blackbox exporter)", weight: 3 }
+        - { text: "TLS terminated at the ingress/LB; private keys stored as Kubernetes Secrets", weight: 1 }
+    modelAnswer: |
+      I'd use cert-manager. You define an Issuer or ClusterIssuer, for public sites Let's Encrypt via ACME with an HTTP-01 or DNS-01 challenge, or an internal CA, and then either create Certificate resources or just annotate the Ingress. cert-manager requests the certificate, stores the key and cert in a Secret the ingress controller uses, and renews automatically, by default about 30 days before expiry. To avoid surprise expiries (still a classic outage), I'd alert on certificate expiry, using cert-manager's metrics or a blackbox exporter probing the real endpoints, for example when there are fewer than 14 days left, and alert on failed renewals.
+    explanation: "MyBroker uses cert-manager with a self-signed root → local-ca ClusterIssuer; every Ingress gets a certificate automatically."
+
+  - id: sec-tls-002
+    type: mcq
+    subtopic: tls
+    level: 2
+    prompt: '`curl https://api.internal` fails with "certificate verify failed: unable to get local issuer certificate". What''s most likely?'
+    options:
+      - "The server's cert is signed by a CA the client doesn't trust (internal/self-signed CA not installed, or intermediate cert missing from the chain)"
+      - "The server is down"
+      - "DNS is wrong"
+      - "The port is closed"
+    correct: [0]
+    explanation: "Fix the trust: install the internal CA on the client, or have the server send the full chain. Don't 'fix' it with `curl -k` in real code."
+
+  - id: sec-hard-001
+    type: mcq
+    subtopic: hardening
+    level: 2
+    prompt: "Which settings harden a Kubernetes pod? (Select all.)"
+    options:
+      - "runAsNonRoot: true and a non-root user in the image"
+      - "readOnlyRootFilesystem: true (with emptyDir for writable paths)"
+      - "capabilities: drop: [ALL] and allowPrivilegeEscalation: false"
+      - "privileged: true so the app can do anything it needs"
+    correct: [0, 1, 2]
+    explanation: "These are part of the Pod Security Standard 'restricted' profile, which you can enforce per namespace with Pod Security Admission labels."
+
+  - id: sec-hard-002
+    type: open
+    subtopic: hardening
+    level: 2
+    prompt: You're given a new Linux VM that will be exposed to the internet. What basic hardening steps do you take?
+    rubric:
+      keyPoints:
+        - { text: "Patch the OS and enable automatic security updates", weight: 2 }
+        - { text: "SSH: keys only, no root login, restrict source IPs/bastion/VPN or use SSM; fail2ban", weight: 3 }
+        - { text: "Firewall/security group: open only needed ports", weight: 3 }
+        - { text: "Least-privilege users with sudo; remove unneeded services/packages", weight: 1 }
+        - { text: "Logging/monitoring and backups", weight: 1 }
+    modelAnswer: |
+      First update all packages and enable unattended security updates. Then SSH: key-based authentication only, `PermitRootLogin no`, a named user with sudo, and ideally SSH not open to the whole internet: restrict it to the office or VPN IPs, go through a bastion, or use AWS SSM Session Manager with no port 22 at all; fail2ban if it must be public. Then a firewall or security group that only opens what the service needs, like 443. Remove or disable services and packages you don't need. Finally, ship logs centrally, set up monitoring and alerts, and make sure backups exist and restores are tested. CIS benchmarks are a good checklist.
+    explanation: Even better is immutable infrastructure, with hardened images built by Packer and replaced instead of patched in place.
+
+  - id: sec-secrets-003
+    type: mcq
+    subtopic: secrets
+    level: 1
+    prompt: Where should a developer keep the database password for local development?
+    options: ["In a .env file that's listed in .gitignore", "Hard-coded in the source code", "In the README", "In a commit message"]
+    correct: [0]
+    explanation: "A git-ignored `.env` file (or a local secret manager) keeps it out of Git. Commit a `.env.example` with empty values so others know what's needed."
+
+  - id: sec-secrets-004
+    type: mcq
+    subtopic: secrets
+    level: 2
+    prompt: Why rotate secrets regularly, even if nothing leaked as far as you know?
+    options:
+      - "A leak may have happened without anyone noticing; rotation limits how long a stolen secret stays useful"
+      - "Old secrets slow down the application"
+      - "Cloud providers delete secrets older than 30 days"
+      - "It's only needed for SSH keys"
+    correct: [0]
+    explanation: "Rotation shrinks the window of damage. Automating it (Secrets Manager rotation, Vault dynamic secrets) makes it painless."
+
+  - id: sec-lp-002
+    type: mcq
+    subtopic: least-privilege
+    level: 1
+    prompt: What is MFA, and why should it be on for cloud console accounts?
+    options:
+      - "Multi-factor authentication: a second proof (app code, hardware key) besides the password, so a stolen password alone isn't enough"
+      - "A way to share one account between many people"
+      - "A firewall feature"
+      - "A backup method for passwords"
+    correct: [0]
+    explanation: "MFA is the single most effective protection for human accounts. The AWS root account must always have it, ideally with a hardware key."
+
+  - id: sec-lp-003
+    type: open
+    subtopic: least-privilege
+    level: 2
+    prompt: Why shouldn't containers run as root, and how do you avoid it?
+    rubric:
+      keyPoints:
+        - { text: "If the app is compromised, the attacker gets root inside the container, which makes escaping to the host or other damage easier", weight: 3 }
+        - { text: "Add a USER with a non-root user in the Dockerfile", weight: 3 }
+        - { text: "In Kubernetes: runAsNonRoot, allowPrivilegeEscalation false, drop capabilities, read-only root filesystem", weight: 2 }
+        - { text: "Apps then listen on ports above 1024", weight: 1 }
+    modelAnswer: |
+      By default a container's process runs as root. If an attacker breaks into the app, they're root inside the container, and together with a kernel bug or a bad mount that can turn into control of the host. Running as a normal user limits the damage. In the Dockerfile I create or use a non-root user and switch to it with `USER`. In Kubernetes I set `runAsNonRoot: true`, `allowPrivilegeEscalation: false`, drop all capabilities and use a read-only root filesystem. The app then listens on a port above 1024, like 8080, because normal users can't bind low ports.
+    explanation: "Official images like `node` already include a `node` user; you just need `USER node`."
+
+  - id: sec-sc-003
+    type: mcq
+    subtopic: supply-chain
+    level: 1
+    prompt: What does a dependency bot like Dependabot or Renovate do?
+    options:
+      - "Opens pull requests to update outdated or vulnerable dependencies"
+      - "Deletes unused dependencies automatically in production"
+      - "Encrypts your package.json"
+      - "Builds Docker images"
+    correct: [0]
+    explanation: "It keeps dependencies current in small, reviewable PRs, and CI tests each update before you merge."
+
+  - id: sec-sc-004
+    type: mcq
+    subtopic: supply-chain
+    level: 2
+    prompt: 'Why pin a GitHub Action to a commit SHA (e.g. `uses: org/action@3f2c9a1…`) instead of a tag like `@v4`?'
+    options:
+      - "A tag can be moved to malicious code if the action is compromised; a commit SHA can't change"
+      - "SHAs run faster"
+      - "Tags don't work in private repos"
+      - "GitHub requires it"
+    correct: [0]
+    explanation: "This happened in real attacks on popular actions. Pin by SHA and let Dependabot update the pins."
+
+  - id: sec-tls-003
+    type: mcq
+    subtopic: tls
+    level: 1
+    prompt: What does Let's Encrypt provide?
+    options: ["Free, automated TLS certificates trusted by browsers", "A free firewall", "A password manager", "A VPN service"]
+    correct: [0]
+    explanation: "It issues short-lived (90-day) certificates through the ACME protocol, so renewal must be automated, for example with cert-manager or certbot."
+
+  - id: sec-tls-004
+    type: command
+    subtopic: tls
+    level: 2
+    prompt: Using openssl, connect to `example.com` on port 443 to see the certificate the server presents.
+    answers: ["openssl s_client -connect example.com:443", "openssl s_client -connect example.com:443 -servername example.com"]
+    patterns: ['^(echo \| )?openssl s_client (?=.*-connect example\.com:443).*$']
+    samples: ["openssl s_client -servername example.com -connect example.com:443", "echo | openssl s_client -connect example.com:443"]
+    rejects: ["openssl x509 -in cert.pem", "curl example.com"]
+    explanation: "`s_client` shows the certificate chain and handshake. Pipe it to `openssl x509 -noout -dates` to see the expiry date."
+
+  - id: sec-hard-003
+    type: mcq
+    subtopic: hardening
+    level: 1
+    prompt: What is the principle of "defense in depth"?
+    options:
+      - "Several independent layers of protection, so one failing control doesn't expose everything"
+      - "Putting the database as deep as possible in the network"
+      - "Using one very strong firewall"
+      - "Encrypting data twice"
+    correct: [0]
+    explanation: "For example: security groups plus NetworkPolicies plus app authentication plus least-privilege IAM plus monitoring."
+
+  - id: sec-hard-004
+    type: open
+    subtopic: hardening
+    level: 2
+    prompt: What would you check in a security review of a Kubernetes namespace?
+    rubric:
+      keyPoints:
+        - { text: "Pod security: non-root, no privileged containers, read-only filesystem, dropped capabilities (Pod Security Standards)", weight: 3 }
+        - { text: "Network: NetworkPolicies with default deny and only needed traffic", weight: 2 }
+        - { text: "RBAC: no broad roles or cluster-admin for workloads; service account tokens only where needed", weight: 2 }
+        - { text: "Secrets handling, images from trusted registries and scanned, resource limits set", weight: 2 }
+    modelAnswer: |
+      I'd go through it in layers. Pods: do they run as non-root, with no privileged containers, all capabilities dropped and a read-only filesystem? The Pod Security Standard "restricted" level can enforce that on the namespace. Network: is there a default-deny NetworkPolicy with only the needed traffic allowed? RBAC: do the service accounts have only the permissions they need, nothing like cluster-admin, and is the token only mounted where it's used? Secrets: are they synced from a secret manager rather than committed to Git? Images: from trusted registries, pinned, and scanned in CI. And resource requests and limits, so one pod can't starve the others.
+    explanation: "Tools like kube-bench, kubescape and Trivy's Kubernetes scan can automate much of this checklist."
+
+  - id: sec-hard-005
+    type: mcq
+    subtopic: hardening
+    level: 2
+    prompt: Which is the safest way to give engineers access to servers in private subnets on AWS?
+    options:
+      - "AWS Systems Manager Session Manager: no open SSH port, IAM-controlled access, and every session is logged"
+      - "Give every server a public IP and open port 22 to the internet"
+      - "Share one SSH key among the whole team"
+      - "Turn off the security groups"
+    correct: [0]
+    explanation: "A bastion host with SSH keys is the classic option; Session Manager removes the open port and the key management entirely."
+
+  # ---------- Added: basics ----------
+  - id: sec-secrets-005
+    type: mcq
+    subtopic: secrets
+    level: 1
+    prompt: Is base64 a safe way to hide a password in a config file?
+    options:
+      - "No: base64 is an encoding, not encryption; anyone can decode it in one command"
+      - "Yes, it's a form of encryption"
+      - "Yes, if the string is long"
+      - "Only on Linux"
+    correct: [0]
+    explanation: "`echo cGFzc3dvcmQ= | base64 -d` prints `password`. Kubernetes Secrets are base64 for transport, which is why they still need RBAC and encryption at rest."
+
+  - id: sec-secrets-006
+    type: mcq
+    subtopic: secrets
+    level: 1
+    prompt: What does a secrets manager like HashiCorp Vault or AWS Secrets Manager give you, compared with secrets in config files? (Select all.)
+    options:
+      - "One central, encrypted place for secrets"
+      - "Access control: only specific apps and people can read each secret"
+      - "An audit log of who read what, and support for rotation"
+      - "Faster application startup"
+    correct: [0, 1, 2]
+    explanation: "Apps fetch secrets at runtime using their identity (an IAM role, a Kubernetes ServiceAccount), so nothing secret lives in Git or in the image."
+
+  - id: sec-lp-004
+    type: mcq
+    subtopic: least-privilege
+    level: 1
+    prompt: What is RBAC?
+    options:
+      - "Role-Based Access Control: permissions are given to roles, and users or services get roles, instead of permissions given to each person one by one"
+      - "A type of firewall"
+      - "A backup tool"
+      - "An encryption standard"
+    correct: [0]
+    explanation: "Example: a `developer` role can read pods and logs in `staging`, and a `deployer` role can update Deployments. When someone changes teams you change their role, not dozens of permissions."
+
+  - id: sec-lp-005
+    type: mcq
+    subtopic: least-privilege
+    level: 2
+    prompt: Your CI pipeline deploys one app to the `shop` namespace. What permissions should its credentials have?
+    options:
+      - "Only what the deploy needs in the `shop` namespace, ideally with short-lived credentials (OIDC)"
+      - "cluster-admin, so it never fails"
+      - "Read-only access to all namespaces"
+      - "The same credentials the platform team uses"
+    correct: [0]
+    explanation: "CI systems are a popular target. If the pipeline is compromised, a narrow, short-lived permission limits what an attacker can do. With GitOps, CI needs no cluster access at all."
+
+  - id: sec-sc-005
+    type: mcq
+    subtopic: supply-chain
+    level: 1
+    prompt: What is a CVE?
+    options:
+      - "A public ID for a known security vulnerability, like CVE-2021-44228 (Log4Shell)"
+      - "A type of container image"
+      - "An encryption algorithm"
+      - "A cloud provider's security certificate"
+    correct: [0]
+    explanation: "Scanners like Trivy match your packages against CVE databases. Each CVE has a severity (CVSS score), and the important question is whether a fixed version exists."
+
+  - id: sec-sc-006
+    type: command
+    subtopic: supply-chain
+    level: 1
+    prompt: Scan the image `myapp:1.4.0` for known vulnerabilities with Trivy.
+    answers: ["trivy image myapp:1.4.0"]
+    patterns: ['^trivy image (?=.*myapp:1\.4\.0( |$)).*$']
+    samples: ["trivy image --severity HIGH,CRITICAL myapp:1.4.0", "trivy image myapp:1.4.0 --exit-code 1"]
+    rejects: ["trivy myapp:1.4.0", "docker inspect myapp:1.4.0"]
+    explanation: "In CI add `--severity HIGH,CRITICAL --ignore-unfixed --exit-code 1`, so the build fails only on serious issues that have a fix. Trivy can also scan folders, IaC files and Kubernetes manifests."
+
+  - id: sec-sc-007
+    type: mcq
+    subtopic: supply-chain
+    level: 2
+    prompt: What's the difference between SAST and DAST?
+    options:
+      - "SAST analyzes the source code without running it; DAST tests the running application from the outside, like an attacker"
+      - "SAST is for Docker; DAST is for Kubernetes"
+      - "They are the same"
+      - "DAST scans dependencies; SAST scans images"
+    correct: [0]
+    explanation: "SAST (e.g. Semgrep, CodeQL) runs on every PR and finds things like SQL injection patterns. DAST (e.g. OWASP ZAP) runs against a deployed test environment. Dependency scanning (SCA) is a third category."
+
+  - id: sec-sc-008
+    type: mcq
+    subtopic: supply-chain
+    level: 1
+    prompt: What is an SBOM?
+    options:
+      - "Software Bill of Materials: a list of all components and versions inside your software or image"
+      - "A security budget document"
+      - "A type of firewall rule"
+      - "A backup format"
+    correct: [0]
+    explanation: "When a new CVE is announced, an SBOM lets you answer \"which of our images contain this library?\" in minutes. Tools like Syft or Trivy generate it, and docker buildx can attach it to the image."
+
+  - id: sec-tls-005
+    type: mcq
+    subtopic: tls
+    level: 1
+    prompt: A website's TLS certificate expired an hour ago. What do users see?
+    options:
+      - "Browsers show a security warning, and API clients refuse to connect, so it's effectively an outage"
+      - "Nothing; the site works as before"
+      - "The site switches to HTTP automatically"
+      - "Only the padlock icon changes color"
+    correct: [0]
+    explanation: "Expired certificates are a classic, avoidable outage. Automate renewal (cert-manager, ACM, Let's Encrypt) and alert on expiry, e.g. 14 days ahead."
+
+  - id: sec-hard-006
+    type: mcq
+    subtopic: hardening
+    level: 1
+    prompt: Why is regular patching (updating the OS, packages and base images) important?
+    options:
+      - "Most attacks use known vulnerabilities that already have fixes; patching closes them"
+      - "It makes servers faster"
+      - "It's only needed for Windows"
+      - "It reduces the cloud bill"
+    correct: [0]
+    explanation: "For containers, patching means rebuilding images on an updated base image and redeploying, not running `apt upgrade` inside a running container. Tools like Renovate help keep base images current."
+
+  - id: sec-hard-007
+    type: mcq
+    subtopic: hardening
+    level: 1
+    prompt: What does a WAF (Web Application Firewall) do?
+    options:
+      - "Inspects HTTP requests and blocks common attacks like SQL injection and XSS, and can rate-limit abusive clients"
+      - "Encrypts the database"
+      - "Replaces security groups"
+      - "Scans container images"
+    correct: [0]
+    explanation: "It works at layer 7, usually in front of a load balancer or CDN (AWS WAF, Cloudflare). It's an extra layer, not a replacement for secure code."

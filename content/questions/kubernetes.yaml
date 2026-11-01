@@ -1,0 +1,711 @@
+topic: kubernetes
+questions:
+  # ---------- Architecture ----------
+  - id: k8s-arch-001
+    type: open
+    subtopic: architecture
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: Describe the main components of a Kubernetes cluster and what each does.
+    rubric:
+      keyPoints:
+        - { text: "Control plane: kube-apiserver is the front door; every component and kubectl talks to it", weight: 3 }
+        - { text: "etcd: the key-value store holding all cluster state", weight: 3 }
+        - { text: "kube-scheduler assigns pending pods to nodes", weight: 2 }
+        - { text: "kube-controller-manager runs the control loops that drive actual state to desired state (ReplicaSet, node, endpoints controllers…)", weight: 2 }
+        - { text: "Worker nodes: kubelet (runs/monitors pods via the container runtime), kube-proxy (Service networking rules), container runtime (containerd)", weight: 3 }
+    modelAnswer: |
+      There's a control plane and worker nodes. In the control plane, the **API server** is the front door: kubectl, the other components and controllers all read and write state through it. **etcd** is the consistent key-value database that stores the whole cluster state. The **scheduler** watches for pods with no node and picks a node based on resources, affinity and taints. The **controller manager** runs control loops, for example the ReplicaSet controller notices 2 pods when 3 are wanted and creates one. On each worker node, the **kubelet** gets its pod specs from the API server and makes the container runtime (containerd) run them, and reports health back. **kube-proxy** programs iptables/IPVS rules so Service IPs reach the right pods. Plus add-ons like CoreDNS and a CNI plugin for pod networking.
+    explanation: "Everything is declarative: you store the desired state in etcd via the API server, and controllers reconcile reality towards it. That's the core idea."
+    followUps: ["What happens, step by step, when you run kubectl apply -f deployment.yaml?"]
+
+  - id: k8s-arch-002
+    type: order
+    subtopic: architecture
+    level: 2
+    tags: [il-common]
+    prompt: You run `kubectl apply -f deployment.yaml`. Put what happens next in order.
+    steps:
+      - "kubectl sends the manifest to the API server, which authenticates, authorizes and validates it"
+      - "The Deployment object is stored in etcd"
+      - "The Deployment controller creates a ReplicaSet, and the ReplicaSet controller creates Pod objects"
+      - "The scheduler assigns each pending Pod to a node"
+      - "The kubelet on that node tells the container runtime to pull the image and start the containers"
+    explanation: Each component only watches the API server and reacts to the objects it cares about. That's the controller pattern.
+
+  - id: k8s-arch-003
+    type: mcq
+    subtopic: architecture
+    level: 2
+    prompt: Which component stores the cluster's state, and is therefore the thing you must back up?
+    options: ["etcd", "kube-scheduler", "kubelet", "CoreDNS"]
+    correct: [0]
+    explanation: "Losing etcd means losing the cluster's state. Managed services (EKS, GKE, AKS) run and back up the control plane for you. With GitOps, the manifests in Git are another way to rebuild."
+
+  - id: k8s-arch-004
+    type: mcq
+    subtopic: architecture
+    level: 1
+    prompt: What does the kubelet do?
+    options:
+      - "An agent on every node that makes sure the containers described in its PodSpecs are running and healthy, and reports status to the API server"
+      - "It schedules pods onto nodes"
+      - "It's the command-line tool for talking to the cluster"
+      - "It stores cluster configuration"
+    correct: [0]
+    explanation: "The kubelet runs probes, restarts containers per the restartPolicy, mounts volumes and reports node and pod status. `kubectl` is the CLI; the kubelet is the node agent."
+
+  # ---------- Workloads ----------
+  - id: k8s-wl-001
+    type: open
+    subtopic: workloads
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between a Pod, a ReplicaSet and a Deployment? Why don't you usually create Pods directly?
+    rubric:
+      keyPoints:
+        - { text: "A Pod is the smallest deployable unit: one or more containers sharing network namespace (IP) and volumes", weight: 3 }
+        - { text: "A ReplicaSet keeps N identical pods running (recreates them if they die)", weight: 2 }
+        - { text: "A Deployment manages ReplicaSets to provide rolling updates and rollbacks", weight: 3 }
+        - { text: "Bare pods aren't rescheduled/replaced if they or their node die; controllers provide self-healing", weight: 2 }
+    modelAnswer: |
+      A Pod is the smallest unit Kubernetes runs: one or more containers that share an IP, the network namespace and volumes, and are always scheduled together. A ReplicaSet makes sure a given number of identical pods is running and replaces any that die. A Deployment sits on top of ReplicaSets and handles versions: when you change the image, it creates a new ReplicaSet and gradually shifts pods to it (a rolling update), and it can roll back to the previous one. You don't create bare pods because nothing recreates them if they crash or their node dies. With a Deployment you get self-healing, scaling and safe updates.
+    explanation: "In practice: Deployments for stateless apps, StatefulSets for databases, DaemonSets for per-node agents, Jobs and CronJobs for batch."
+
+  - id: k8s-wl-002
+    type: mcq
+    subtopic: workloads
+    level: 1
+    tags: [il-common]
+    prompt: You need a log-collector agent running on **every** node, including new nodes added later. Which workload type?
+    options: ["DaemonSet", "Deployment with replicas = number of nodes", "StatefulSet", "CronJob"]
+    correct: [0]
+    explanation: "A DaemonSet runs one pod per node (or per matching node) and adds pods automatically when nodes join. Typical uses: log shippers (Fluent Bit), node-exporter, CNI and storage agents."
+
+  - id: k8s-wl-003
+    type: open
+    subtopic: workloads
+    level: 2
+    tags: [il-common]
+    prompt: When would you use a StatefulSet instead of a Deployment? What does it guarantee?
+    rubric:
+      keyPoints:
+        - { text: "For stateful apps (databases, Kafka, ZooKeeper, Elasticsearch) that need stable identity and storage", weight: 2 }
+        - { text: "Stable, ordinal pod names (db-0, db-1) and stable DNS via a headless Service", weight: 3 }
+        - { text: "Each pod gets its own PersistentVolumeClaim (volumeClaimTemplates) that follows it across rescheduling", weight: 3 }
+        - { text: "Ordered, graceful deployment/scaling/updates", weight: 2 }
+    modelAnswer: |
+      A StatefulSet is for apps where each replica has an identity, like a database cluster or Kafka brokers. It gives each pod a stable, ordinal name (`db-0`, `db-1`) and a stable DNS name through a headless Service, so peers can find each other. Through `volumeClaimTemplates` each pod gets its own PersistentVolumeClaim, which stays attached to that identity: if `db-1` is rescheduled to another node, it comes back with the same disk. Pods are created, scaled and updated in order. A Deployment treats pods as interchangeable, with random names and, if they share a volume, the same one, which is fine for stateless web apps.
+    explanation: Many teams run their databases on managed services (RDS and so on) instead of in-cluster StatefulSets, to avoid the operational burden.
+
+  - id: k8s-wl-004
+    type: mcq
+    subtopic: workloads
+    level: 2
+    prompt: Two containers in the same Pod need to communicate. How can they reach each other?
+    options:
+      - "Over localhost, since they share the pod's network namespace, or through a shared volume"
+      - "Only through a Kubernetes Service"
+      - "They can't communicate"
+      - "Through the node's public IP"
+    correct: [0]
+    explanation: "Containers in a pod share an IP and port space, so they can't both bind the same port. This is the sidecar pattern: a proxy, log shipper or config reloader next to the main app."
+
+  - id: k8s-wl-005
+    type: mcq
+    subtopic: workloads
+    level: 2
+    prompt: What's an **init container** used for?
+    options:
+      - "It runs to completion before the app containers start, e.g. waiting for a dependency, running migrations or fetching config"
+      - "It runs alongside the app for its whole life"
+      - "It initializes the node"
+      - "It's the first container image pulled in the cluster"
+    correct: [0]
+    explanation: Init containers run sequentially and each must succeed before the main containers start. A pod stuck in `Init:0/1` usually means the init container is failing or waiting.
+
+  # ---------- Services ----------
+  - id: k8s-svc-001
+    type: open
+    subtopic: services
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: Why do we need Services in Kubernetes? Explain ClusterIP, NodePort and LoadBalancer.
+    rubric:
+      keyPoints:
+        - { text: "Pods are ephemeral with changing IPs; a Service gives a stable virtual IP and DNS name and load-balances across matching pods (label selector)", weight: 3 }
+        - { text: "ClusterIP (default): reachable only inside the cluster", weight: 2 }
+        - { text: "NodePort: opens a port (30000-32767) on every node that forwards to the service", weight: 2 }
+        - { text: "LoadBalancer: asks the cloud provider for an external load balancer pointing at the service", weight: 2 }
+        - { text: "Endpoints/EndpointSlices track the ready pod IPs; only ready pods receive traffic", weight: 1 }
+    modelAnswer: |
+      Pods come and go and their IPs change, so clients need something stable. A Service selects pods by label and gives them one stable virtual IP and a DNS name like `api.default.svc.cluster.local`, load-balancing across the ready pods. kube-proxy implements it with iptables or IPVS rules. Types: **ClusterIP**, the default, only reachable inside the cluster, for service-to-service traffic. **NodePort** additionally opens the same port (30000–32767) on every node, so you can reach it from outside via any node IP. **LoadBalancer** additionally asks the cloud to create an external load balancer, like an AWS NLB, that sends traffic to it. For HTTP you usually expose one LoadBalancer for an ingress controller instead of one per service.
+    explanation: "There's also `ExternalName` (a DNS CNAME to an external host) and headless services (`clusterIP: None`, DNS returns the pod IPs directly, used by StatefulSets)."
+    followUps: ["What's the difference between a Service and an Ingress?"]
+
+  - id: k8s-svc-002
+    type: mcq
+    subtopic: services
+    level: 2
+    tags: [il-common]
+    prompt: A Service exists, but requests to it fail and `kubectl get endpoints my-svc` shows `<none>`. What's the most likely cause?
+    options:
+      - "The Service's selector doesn't match the pods' labels, or no matching pod is Ready"
+      - "The Service type must be LoadBalancer"
+      - "CoreDNS is down"
+      - "The image tag is wrong"
+    correct: [0]
+    explanation: "No endpoints means no ready pod matches the selector. Compare `kubectl get svc my-svc -o yaml` (selector) with `kubectl get pods --show-labels`, check readiness probes, and check that `targetPort` matches the container port."
+
+  - id: k8s-svc-003
+    type: mcq
+    subtopic: services
+    level: 2
+    prompt: A pod in namespace `shop` wants to call the Service `payments` in namespace `billing` on port 8080. Which URL works?
+    options: ["http://payments.billing:8080", "http://payments:8080", "http://billing.payments:8080", "http://payments.shop.svc:8080"]
+    correct: [0]
+    explanation: "The short name `payments` only resolves within the same namespace (thanks to the search domains in /etc/resolv.conf). Across namespaces use `service.namespace`, or the full `payments.billing.svc.cluster.local`."
+
+  # ---------- Ingress ----------
+  - id: k8s-ing-001
+    type: open
+    subtopic: ingress
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: What is an Ingress, and how is it different from a LoadBalancer Service?
+    rubric:
+      keyPoints:
+        - { text: "Ingress is an L7 (HTTP/HTTPS) routing resource: host- and path-based rules to Services", weight: 3 }
+        - { text: "It needs an ingress controller (nginx, Traefik, AWS LB Controller) to actually do the routing", weight: 3 }
+        - { text: "One entry point (one load balancer) can serve many services, and it handles TLS termination", weight: 2 }
+        - { text: "A LoadBalancer Service is L4 and one per service, more cost/IPs", weight: 2 }
+    modelAnswer: |
+      An Ingress is a set of HTTP routing rules: route `api.example.com` to the api Service, `example.com/static` to the frontend, and terminate TLS with this certificate. By itself it does nothing. An **ingress controller** like ingress-nginx or Traefik watches Ingress objects and configures its proxy accordingly. The controller itself is usually exposed by a single LoadBalancer Service. A LoadBalancer Service works at L4 (TCP) and gives you one cloud load balancer per Service, with no host or path routing. So with an Ingress, many services share one entry point and one IP, and you get TLS, redirects and path routing.
+    explanation: "In my MyBroker kind cluster I used Traefik as the ingress controller, with cert-manager issuing TLS certificates from a local CA. The newer **Gateway API** is the successor to Ingress."
+
+  - id: k8s-ing-002
+    type: mcq
+    subtopic: ingress
+    level: 2
+    prompt: You created an Ingress, but nothing answers on the hostname. What's the FIRST thing to check?
+    options:
+      - "Is an ingress controller installed and running, and does the Ingress's ingressClassName match it?"
+      - "Whether the pods use the latest image"
+      - "Whether etcd is healthy"
+      - "Whether HPA is enabled"
+    correct: [0]
+    explanation: "No controller (or a class mismatch) means nobody acts on the Ingress. Then check DNS points at the controller's address, `kubectl describe ingress`, and that the backend Service has endpoints."
+
+  # ---------- Config ----------
+  - id: k8s-cfg-001
+    type: open
+    subtopic: config
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between a ConfigMap and a Secret? Are Secrets secure?
+    rubric:
+      keyPoints:
+        - { text: "Both inject configuration into pods as env vars or mounted files", weight: 2 }
+        - { text: "ConfigMap for non-sensitive config; Secret for sensitive data (passwords, tokens, certs)", weight: 2 }
+        - { text: "Secrets are only base64-encoded, not encrypted by default; anyone with read access via RBAC can decode them", weight: 3 }
+        - { text: "Protect them: RBAC, encryption at rest for etcd (KMS), external secret managers (Vault, AWS Secrets Manager + External Secrets/CSI), Sealed Secrets/SOPS for Git", weight: 3 }
+    modelAnswer: |
+      Both hold key-value data you inject into pods as environment variables or files. ConfigMaps are for normal config, Secrets for sensitive values. But a Secret is only **base64-encoded**, which is not encryption: anyone who can `get` it through RBAC can decode it, and by default it's stored unencrypted in etcd. To make them safe: tight RBAC so only the pods and people who need them can read them, enable encryption at rest in etcd with a KMS, and ideally keep the real secrets in a manager like Vault or AWS Secrets Manager and sync them in with External Secrets Operator or the CSI driver. Never commit plain Secret manifests to Git; use Sealed Secrets or SOPS if you need them in GitOps.
+    explanation: "Mounted ConfigMaps and Secrets update in the pod (eventually), but environment variables only change when the pod restarts."
+
+  - id: k8s-cfg-002
+    type: command
+    subtopic: config
+    level: 2
+    prompt: Create a generic Secret named `db-creds` with key `password` set to `s3cr3t`, imperatively.
+    answers: ["kubectl create secret generic db-creds --from-literal=password=s3cr3t"]
+    patterns: ["^kubectl create secret generic db-creds --from-literal[= ]'?password=s3cr3t'?( -n \\S+)?$"]
+    samples: ["kubectl create secret generic db-creds --from-literal password=s3cr3t", "kubectl create secret generic db-creds --from-literal='password=s3cr3t'"]
+    rejects: ["kubectl create secret db-creds password=s3cr3t", "kubectl create configmap db-creds --from-literal=password=s3cr3t"]
+    explanation: "Decode it with `kubectl get secret db-creds -o jsonpath='{.data.password}' | base64 -d`, which shows how trivial base64 is. Note that the literal also lands in your shell history."
+
+  # ---------- Probes ----------
+  - id: k8s-probe-001
+    type: open
+    subtopic: probes
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: What's the difference between a liveness probe and a readiness probe? What happens when each one fails?
+    rubric:
+      keyPoints:
+        - { text: "Liveness: is the container alive/healthy; on failure the kubelet RESTARTS the container", weight: 3 }
+        - { text: "Readiness: can it serve traffic now; on failure the pod is REMOVED from Service endpoints (not restarted)", weight: 3 }
+        - { text: "Startup probe: for slow-starting apps; disables the other probes until it succeeds", weight: 2 }
+        - { text: "Liveness shouldn't depend on external dependencies (DB), or an outage causes restart storms", weight: 2 }
+      redFlags:
+        - "Says a failing readiness probe restarts the container"
+    modelAnswer: |
+      Both are health checks the kubelet runs: HTTP, TCP or exec. A **liveness** probe asks "is this process stuck?". If it fails enough times, the kubelet kills and restarts the container. A **readiness** probe asks "should this pod get traffic right now?". If it fails, the pod is taken out of the Service endpoints, but it's not restarted, and it gets traffic again when it passes. That's what you want during startup, warm-up or a temporary overload. There's also a **startup** probe for slow-starting apps, which holds off the other probes until the app is up. A common mistake is checking the database in the liveness probe: when the DB has a blip, every pod restarts at once.
+    explanation: "My MyBroker /api/health endpoint deliberately answers from memory without calling upstream APIs, so an upstream outage never makes Kubernetes restart healthy pods."
+
+  - id: k8s-probe-002
+    type: mcq
+    subtopic: probes
+    level: 2
+    prompt: A Java app takes 90 seconds to start, and keeps getting restarted in a loop during startup. What's the cleanest fix?
+    options:
+      - "Add a startupProbe with a high enough failureThreshold × periodSeconds; liveness only starts after it succeeds"
+      - "Remove all probes"
+      - "Increase the memory limit"
+      - "Set restartPolicy: Never"
+    correct: [0]
+    explanation: "Without a startup probe, liveness starts checking too early and kills the container before it's up. You could raise `initialDelaySeconds`, but a startup probe handles variable startup times better."
+
+  # ---------- Resources ----------
+  - id: k8s-res-001
+    type: open
+    subtopic: resources
+    level: 2
+    tags: [il-common]
+    prompt: What's the difference between resource requests and limits? What happens when a container exceeds its memory limit vs its CPU limit?
+    rubric:
+      keyPoints:
+        - { text: "Requests: what the scheduler reserves; used to decide which node fits the pod", weight: 3 }
+        - { text: "Limits: the maximum the container may use (enforced by cgroups)", weight: 2 }
+        - { text: "Exceeding the memory limit: the container is OOMKilled (exit code 137) and restarted", weight: 3 }
+        - { text: "Exceeding the CPU limit: the container is throttled (slowed), not killed", weight: 3 }
+        - { text: "QoS classes (Guaranteed/Burstable/BestEffort) decide eviction order under node pressure", weight: 1 }
+    modelAnswer: |
+      Requests are what the scheduler uses: a pod requesting 500m CPU and 256Mi memory only goes on a node with that much unreserved capacity. Limits are the ceiling, enforced by cgroups. Memory and CPU behave differently: memory can't be taken back, so if a container goes over its memory limit, the kernel OOM-kills it and Kubernetes restarts it (exit code 137, reason OOMKilled). CPU can be shared, so going over the CPU limit just means throttling: the app gets slower, but it isn't killed. Requests and limits also set the pod's QoS class. Guaranteed (requests = limits) pods are evicted last when a node runs out of memory, and BestEffort (none set) first.
+    explanation: "Many teams set memory request = limit and a CPU request but no CPU limit, to avoid needless throttling. Always set requests; without them the scheduler is blind."
+
+  - id: k8s-res-002
+    type: mcq
+    subtopic: resources
+    level: 2
+    prompt: 'A pod is stuck in `Pending`, and `kubectl describe pod` says `0/3 nodes are available: 3 Insufficient memory`. What does that mean?'
+    options:
+      - "No node has enough unreserved memory to satisfy the pod's memory REQUEST; lower the request, free capacity or add nodes"
+      - "The container is using too much memory and was killed"
+      - "The memory limit is lower than the request"
+      - "The image is too large"
+    correct: [0]
+    explanation: "Scheduling looks at **requests** compared with allocatable capacity, not at actual usage. `kubectl describe node` shows 'Allocated resources'. The Cluster Autoscaler adds nodes when pods are Pending for this reason."
+
+  # ---------- Scaling ----------
+  - id: k8s-scale-001
+    type: open
+    subtopic: scaling
+    level: 2
+    tags: [your-stack]
+    prompt: How does the Horizontal Pod Autoscaler work? What does it need in order to function?
+    rubric:
+      keyPoints:
+        - { text: "It periodically compares a metric (e.g. average CPU utilization) to a target and adjusts the replica count of a Deployment/StatefulSet", weight: 3 }
+        - { text: "Needs metrics-server (or custom/external metrics via an adapter like Prometheus Adapter/KEDA)", weight: 3 }
+        - { text: "CPU utilization is relative to the pods' CPU REQUESTS, so requests must be set", weight: 2 }
+        - { text: "Respects min/max replicas and has stabilization windows to avoid flapping", weight: 1 }
+        - { text: "Different from Cluster Autoscaler (adds nodes) and VPA (changes requests)", weight: 1 }
+    modelAnswer: |
+      The HPA is a control loop that, every 15 seconds or so, reads a metric for the pods of a Deployment, usually average CPU utilization, compares it with the target (say 70%), and changes the replica count proportionally, within min and max. For CPU and memory it needs **metrics-server** installed; for other metrics like requests per second or queue length it needs a custom metrics adapter or KEDA. CPU utilization is measured as a percentage of the pod's **request**, so without requests the HPA can't work. It has a scale-down stabilization window to avoid flapping. Note it only adds pods. If there's no room for them, the Cluster Autoscaler or Karpenter adds nodes.
+    explanation: "In MyBroker, Terraform installs metrics-server and the Helm chart ships an HPA template, so `kubectl get hpa` shows the current and target utilization."
+
+  - id: k8s-scale-002
+    type: command
+    subtopic: scaling
+    level: 1
+    prompt: Scale the Deployment `api` to 5 replicas, imperatively.
+    answers: ["kubectl scale deployment api --replicas=5", "kubectl scale deploy api --replicas=5", "kubectl scale deployment/api --replicas=5"]
+    patterns: ['^kubectl scale (deployment|deploy|deployments)[ /]api --replicas[= ]5( -n \S+)?$']
+    samples: ["kubectl scale deploy/api --replicas 5", "kubectl scale deployment api --replicas=5 -n prod"]
+    rejects: ["kubectl scale api --replicas=5", "kubectl autoscale deployment api --max=5"]
+    explanation: "Under GitOps (Argo CD with self-heal), a manual scale gets reverted to what's in Git. Change the manifest, or let an HPA own the replica count."
+
+  # ---------- Storage ----------
+  - id: k8s-stor-001
+    type: open
+    subtopic: storage
+    level: 2
+    prompt: Explain PersistentVolume, PersistentVolumeClaim and StorageClass, and how dynamic provisioning works.
+    rubric:
+      keyPoints:
+        - { text: "PV: a piece of actual storage in the cluster (EBS volume, NFS share…)", weight: 2 }
+        - { text: "PVC: a pod's request for storage (size, access mode); binds to a PV", weight: 3 }
+        - { text: "StorageClass: describes a type of storage and its provisioner (e.g. gp3 EBS CSI)", weight: 2 }
+        - { text: "Dynamic provisioning: creating a PVC with a StorageClass makes the CSI driver create the disk and PV automatically", weight: 3 }
+        - { text: "Access modes (RWO/RWX) and reclaim policy (Delete/Retain)", weight: 1 }
+    modelAnswer: |
+      A PersistentVolume is the actual storage: an EBS volume, an NFS export, a local disk. A PersistentVolumeClaim is the app's request: "I need 20Gi, ReadWriteOnce". The pod mounts the claim, not the disk, so the app doesn't care what's behind it. A StorageClass describes a kind of storage and which provisioner creates it, for example `gp3` through the AWS EBS CSI driver. With dynamic provisioning, you just create a PVC that names a StorageClass, and the CSI driver creates the disk and a matching PV and binds them. The reclaim policy decides whether the disk is deleted or kept when the claim is deleted, so use Retain for important data.
+    explanation: "ReadWriteOnce means one node mounts it read-write (block storage like EBS). ReadWriteMany needs shared filesystems (EFS, NFS). A Pending PVC usually means no matching StorageClass or provisioner."
+
+  - id: k8s-stor-002
+    type: mcq
+    subtopic: storage
+    level: 1
+    prompt: What is an `emptyDir` volume?
+    options:
+      - "Scratch space created when a pod starts and deleted when the pod is removed; shared between the pod's containers"
+      - "A persistent disk that survives pod deletion"
+      - "A volume that points to a host directory"
+      - "A volume that is always empty"
+    correct: [0]
+    explanation: "emptyDir lives exactly as long as the pod. It survives container restarts, but not pod deletion or rescheduling. It's good for caches and for sharing files between a sidecar and the app."
+
+  # ---------- RBAC & NetworkPolicy ----------
+  - id: k8s-rbac-001
+    type: open
+    subtopic: rbac-security
+    level: 2
+    prompt: How does RBAC work in Kubernetes? Explain Role, ClusterRole, RoleBinding and ServiceAccount.
+    rubric:
+      keyPoints:
+        - { text: "Role: a set of allowed verbs on resources within a namespace; ClusterRole: cluster-wide (or reusable) permissions", weight: 3 }
+        - { text: "RoleBinding/ClusterRoleBinding attach a role to subjects (users, groups, ServiceAccounts)", weight: 3 }
+        - { text: "ServiceAccount: identity for pods/workloads calling the API", weight: 2 }
+        - { text: "Permissions are additive allow-only (no deny); follow least privilege", weight: 2 }
+    modelAnswer: |
+      RBAC is allow-only and additive. A **Role** lists what's allowed inside one namespace, for example `get`, `list`, `watch` on `pods`. A **ClusterRole** is the same but cluster-wide, for nodes or all namespaces, or as a reusable template. A **RoleBinding** grants a Role (or a ClusterRole, scoped to that namespace) to subjects: users, groups or **ServiceAccounts**. A **ClusterRoleBinding** grants it cluster-wide. ServiceAccounts are the identities that pods use when they call the API, like a CI deployer or an operator. Least privilege means a namespace-scoped Role with exactly the needed verbs, not cluster-admin. You can check with `kubectl auth can-i list pods --as=system:serviceaccount:ns:sa`.
+    explanation: "In the cloud, ServiceAccounts can also map to cloud IAM roles (EKS IRSA / Pod Identity), so pods get AWS permissions without static keys."
+
+  - id: k8s-rbac-002
+    type: open
+    subtopic: rbac-security
+    level: 2
+    tags: [your-stack]
+    prompt: What is a NetworkPolicy, and what's the default network behavior without one?
+    rubric:
+      keyPoints:
+        - { text: "By default all pods can talk to all pods (flat, allow-all network)", weight: 3 }
+        - { text: "NetworkPolicy restricts ingress/egress traffic to selected pods by pod/namespace labels, IP blocks and ports", weight: 3 }
+        - { text: "Once a pod is selected by a policy, everything not explicitly allowed is denied (for that direction)", weight: 2 }
+        - { text: "Requires a CNI that enforces it (Calico, Cilium…); otherwise it's ignored", weight: 2 }
+    modelAnswer: |
+      By default, Kubernetes networking is flat and allow-all: any pod can reach any other pod in any namespace. A NetworkPolicy selects pods by label and says which traffic they may receive (ingress) and send (egress), by pod or namespace labels, IP ranges and ports. As soon as a pod is selected by a policy for a direction, everything not allowed is denied, so a common pattern is a default-deny policy per namespace plus explicit allows, like "only the ingress controller may reach the frontend" and "only the API may reach the database on 5432". Remember to allow DNS egress to CoreDNS. And the CNI plugin must enforce policies, otherwise they're silently ignored.
+    explanation: "In MyBroker I added NetworkPolicies in the Helm chart. kind's default CNI (kindnet) enforces them in recent versions, but I hit stale policy state after node restarts."
+
+  # ---------- Scheduling ----------
+  - id: k8s-sched-001
+    type: open
+    subtopic: scheduling
+    level: 3
+    prompt: Explain taints and tolerations vs node affinity. Give a use case for each.
+    rubric:
+      keyPoints:
+        - { text: "Taints are on nodes and REPEL pods that don't tolerate them (NoSchedule/PreferNoSchedule/NoExecute)", weight: 3 }
+        - { text: "Tolerations on pods allow (not force) scheduling onto tainted nodes", weight: 2 }
+        - { text: "Node affinity on pods ATTRACTS them to nodes with certain labels (required or preferred)", weight: 3 }
+        - { text: "Use cases: dedicated GPU nodes (taint + toleration + affinity together), control-plane nodes are tainted, spread across zones", weight: 2 }
+    modelAnswer: |
+      They work from opposite sides. A **taint** is put on a node and keeps pods away unless they have a matching **toleration**. Control-plane nodes are tainted so normal workloads don't land there, and GPU nodes are tainted so only GPU jobs use them. A toleration only *permits* a pod on the node; it doesn't force it there. **Node affinity** is on the pod and attracts it to nodes with certain labels, required ("must run on nodes with disktype=ssd") or preferred. For truly dedicated nodes you combine both: taint the GPU nodes, and give GPU pods a toleration plus node affinity. Pod anti-affinity or topology spread constraints spread replicas across nodes and zones.
+    explanation: "`kubectl describe node` shows taints. A NoExecute taint also evicts pods that are already running."
+
+  # ---------- Deployments ----------
+  - id: k8s-dep-001
+    type: command
+    subtopic: deployments
+    level: 1
+    tags: [il-common]
+    prompt: Roll back the Deployment `api` to its previous revision.
+    answers: ["kubectl rollout undo deployment/api", "kubectl rollout undo deployment api", "kubectl rollout undo deploy/api"]
+    patterns: ['^kubectl rollout undo (deployment|deploy)[ /]api( --to-revision[= ]\d+)?( -n \S+)?$']
+    samples: ["kubectl rollout undo deploy api", "kubectl rollout undo deployment/api -n prod"]
+    rejects: ["kubectl rollback deployment/api", "kubectl rollout restart deployment/api"]
+    explanation: "`kubectl rollout history deployment/api` lists revisions, `--to-revision=N` picks one, and `rollout status` watches progress. With GitOps you'd revert the commit instead."
+
+  - id: k8s-dep-002
+    type: open
+    subtopic: deployments
+    level: 2
+    prompt: How does a Deployment's rolling update work, and what do `maxSurge` and `maxUnavailable` control?
+    rubric:
+      keyPoints:
+        - { text: "Creates a new ReplicaSet and gradually scales it up while scaling the old one down", weight: 3 }
+        - { text: "maxSurge: how many extra pods above the desired count may exist during the update", weight: 2 }
+        - { text: "maxUnavailable: how many pods below the desired count are allowed", weight: 2 }
+        - { text: "New pods must pass readiness before old ones are removed, so a broken version stalls the rollout instead of taking down the service", weight: 3 }
+    modelAnswer: |
+      When the pod template changes, for example a new image tag, the Deployment creates a new ReplicaSet and shifts pods over step by step: scale the new one up, wait until the new pods are Ready, scale the old one down, repeat. `maxSurge` is how many pods above the desired replica count may exist during the rollout, which trades extra capacity for speed. `maxUnavailable` is how many may be missing. With maxUnavailable 0 and maxSurge 1, you never drop below full capacity. Because it waits for readiness, a broken image just stalls the rollout with the old pods still serving, and you can `rollout undo`. The old ReplicaSet is kept, scaled to 0, for rollbacks.
+    explanation: "The alternative strategy `Recreate` kills all old pods first, which means downtime, but it's sometimes needed when two versions can't run at once."
+
+  - id: k8s-dep-003
+    type: mcq
+    subtopic: deployments
+    level: 2
+    prompt: What does a PodDisruptionBudget protect against?
+    options:
+      - "Voluntary disruptions like node drains during upgrades evicting too many replicas at once"
+      - "Pods crashing because of application bugs"
+      - "Nodes running out of memory"
+      - "Unauthorized API access"
+    correct: [0]
+    explanation: "A PDB, e.g. `minAvailable: 2`, makes `kubectl drain` and cluster upgrades evict pods gradually. It doesn't help with involuntary failures like a node dying."
+
+  # ---------- Troubleshooting ----------
+  - id: k8s-ts-001
+    type: open
+    subtopic: troubleshooting
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: A pod is in `CrashLoopBackOff`. How do you troubleshoot it?
+    rubric:
+      keyPoints:
+        - { text: "Means the container keeps starting and crashing; Kubernetes backs off between restarts", weight: 2 }
+        - { text: "kubectl logs <pod> --previous to see the crashed container's output", weight: 3 }
+        - { text: "kubectl describe pod: last state, exit code, reason (OOMKilled, Error), events, probe failures", weight: 3 }
+        - { text: "Common causes: app error/bad config or missing env/secret, failing liveness probe, OOMKilled, wrong command/entrypoint, missing dependency", weight: 2 }
+        - { text: "Reproduce/debug: run the image locally, kubectl debug / exec, check recent changes", weight: 1 }
+    modelAnswer: |
+      CrashLoopBackOff means the container starts, exits, and Kubernetes keeps restarting it with growing delays. First `kubectl logs <pod> --previous`, which shows the logs of the crashed instance. Usually the app tells you: a missing env var or Secret, a bad config, a database it can't reach. Then `kubectl describe pod`: the last state shows the exit code and reason (OOMKilled with 137 means raise the memory limit or fix a leak; 1 means an app error), and the events show liveness probe failures that keep killing it. Other causes are a wrong command or args, or the main process exiting immediately. I'd also ask what changed: a new image or a config change. To dig deeper, run the image locally or use `kubectl debug` with a shell.
+    explanation: "Exit code 0 in CrashLoopBackOff means the process finished normally. Its command isn't a long-running server."
+    followUps: ["How is that different from ImagePullBackOff?"]
+
+  - id: k8s-ts-002
+    type: mcq
+    subtopic: troubleshooting
+    level: 1
+    tags: [il-common]
+    prompt: "A pod shows `ImagePullBackOff`. Which are likely causes? (Select all.)"
+    options:
+      - "Wrong image name or tag"
+      - "Private registry without (or with wrong) imagePullSecrets"
+      - "The node can't reach the registry (network/DNS/rate limit)"
+      - "The application throws an exception at startup"
+    correct: [0, 1, 2]
+    explanation: "The image never got pulled, so the app never started. `kubectl describe pod` events show the exact registry error (not found, unauthorized, timeout). An app exception would give CrashLoopBackOff instead."
+
+  - id: k8s-ts-003
+    type: order
+    subtopic: troubleshooting
+    level: 2
+    prompt: "A user says \"the website is down\". It runs in Kubernetes behind an Ingress. Order a sensible top-down investigation."
+    steps:
+      - "Reproduce: curl -v the URL to see the actual error (DNS, TLS, 404, 502, 503)"
+      - "Check the Ingress and ingress controller (kubectl describe ingress, controller logs)"
+      - "Check the Service and its endpoints (kubectl get endpoints)"
+      - "Check the pods: status, restarts, readiness (kubectl get pods, describe)"
+      - "Check the pod logs and recent deploys/config changes"
+    explanation: Follow the request path from the outside in. The error at each hop tells you where to look next.
+
+  - id: k8s-ts-004
+    type: mcq
+    subtopic: troubleshooting
+    level: 2
+    prompt: '`kubectl get pods` shows a pod `Running` with RESTARTS = 14 and `kubectl describe` says `Last State: Terminated, Reason: OOMKilled`. What do you do?'
+    options:
+      - "Check actual memory usage (kubectl top / metrics) vs the limit; raise the limit if it's genuinely too low, or fix the leak if usage keeps growing"
+      - "Increase the CPU limit"
+      - "Delete the pod so it gets a fresh start"
+      - "Remove the readiness probe"
+    correct: [0]
+    explanation: Deleting the pod just resets the counter. Compare the usage pattern with the limit. A steady sawtooth that climbs until it's killed means a leak; a flat line just over the limit means the limit is too low. Also check language runtimes like the JVM heap settings, which must fit inside the container limit.
+
+  - id: k8s-ts-005
+    type: command
+    subtopic: troubleshooting
+    level: 1
+    prompt: Show the logs of the **previous** (crashed) instance of the container in pod `api-7d9f`.
+    answers: ["kubectl logs api-7d9f --previous", "kubectl logs api-7d9f -p"]
+    patterns: ['^kubectl logs (?=.*api-7d9f)(?=.*(--previous|-p\b)).*$']
+    samples: ["kubectl logs --previous api-7d9f", "kubectl logs -p api-7d9f -c api", "kubectl logs api-7d9f --previous -n prod"]
+    rejects: ["kubectl logs api-7d9f", "kubectl describe pod api-7d9f"]
+    explanation: "Without `--previous` you see the current (freshly restarted) container, which often has no useful output yet. Use `-c` to pick a container in multi-container pods."
+
+  - id: k8s-ts-006
+    type: open
+    subtopic: troubleshooting
+    level: 2
+    prompt: A pod is stuck in `Pending`. What are the possible causes and how do you find out?
+    rubric:
+      keyPoints:
+        - { text: "kubectl describe pod and read the Events (scheduler messages)", weight: 3 }
+        - { text: "Insufficient CPU/memory for the requests on any node", weight: 2 }
+        - { text: "Taints without tolerations, nodeSelector/affinity that no node matches", weight: 2 }
+        - { text: "PVC not bound (no StorageClass/provisioner, zone mismatch)", weight: 2 }
+        - { text: "Quota limits / too many pods per node; cluster autoscaler may be adding a node", weight: 1 }
+    modelAnswer: |
+      Pending means the scheduler hasn't placed the pod yet. `kubectl describe pod` tells you why in the Events, for example "0/3 nodes are available: 2 Insufficient cpu, 1 node(s) had untolerated taint". The usual causes: the requests are bigger than any node's free allocatable capacity; a nodeSelector or affinity no node matches, or taints the pod doesn't tolerate; a PersistentVolumeClaim that isn't bound, like a missing StorageClass or a volume in a different availability zone; or a namespace ResourceQuota. Depending on the cause: lower the requests, add nodes (or check why the cluster autoscaler doesn't), fix the labels or tolerations, or fix the storage.
+    explanation: "Pending is a scheduling problem; ContainerCreating means the pod is scheduled but stuck on image pulls, volumes or networking; CrashLoopBackOff is the app itself."
+
+  # ---------- kubectl ----------
+  - id: k8s-kubectl-001
+    type: command
+    subtopic: kubectl
+    level: 1
+    prompt: List all pods in all namespaces, including which node each runs on.
+    answers: ["kubectl get pods -A -o wide", "kubectl get pods --all-namespaces -o wide"]
+    patterns: ['^kubectl get (pods|po|pod) (?=.*(-A\b|--all-namespaces))(?=.*(-o ?wide|--output[= ]wide)).*$']
+    samples: ["kubectl get po -A -o wide", "kubectl get pods -o wide -A", "kubectl get pods --all-namespaces -owide"]
+    rejects: ["kubectl get pods", "kubectl get pods -A"]
+    explanation: "`-A` means all namespaces, `-o wide` adds node and IP. Also handy: `-l app=api` (label filter), `--field-selector status.phase!=Running`, `-w` (watch)."
+
+  - id: k8s-kubectl-002
+    type: command
+    subtopic: kubectl
+    level: 2
+    prompt: Forward local port 8080 to port 80 of the Service `web` (for quick debugging without an Ingress).
+    answers: ["kubectl port-forward svc/web 8080:80", "kubectl port-forward service/web 8080:80"]
+    patterns: ['^kubectl port-forward (svc|service)/web 8080:80( -n \S+)?$']
+    samples: ["kubectl port-forward service/web 8080:80 -n prod"]
+    rejects: ["kubectl port-forward web 80:8080", "kubectl expose svc web --port 8080"]
+    explanation: "It works with pods, deployments or services. The tunnel goes through the API server, so it's only for debugging and not for real traffic."
+
+  - id: k8s-kubectl-003
+    type: mcq
+    subtopic: kubectl
+    level: 1
+    prompt: What's the difference between `kubectl apply` and `kubectl create`?
+    options:
+      - "apply is declarative: it creates the object or updates it to match the file; create is imperative and fails if the object already exists"
+      - "They're identical"
+      - "create is newer and replaces apply"
+      - "apply only works with Deployments"
+    correct: [0]
+    explanation: "`apply` is what you use with files in Git (and what GitOps tools do). `kubectl diff -f` shows what apply would change."
+
+  # ---------- Added: basics ----------
+  - id: k8s-arch-005
+    type: mcq
+    subtopic: architecture
+    level: 1
+    prompt: What is a Kubernetes namespace?
+    options:
+      - "A way to divide one cluster into separate groups of resources, e.g. per team or per environment, with their own names, quotas and permissions"
+      - "A separate physical cluster"
+      - "A DNS server"
+      - "A type of node"
+    correct: [0]
+    explanation: "Names must be unique only inside a namespace. RBAC and ResourceQuotas can be set per namespace. Namespaces do **not** isolate network traffic by themselves; that needs NetworkPolicies. Nodes and PersistentVolumes are not in any namespace."
+
+  - id: k8s-wl-006
+    type: mcq
+    subtopic: workloads
+    level: 1
+    prompt: You need to run a database backup script every night at 02:00 inside the cluster. Which resource?
+    options: ["CronJob", "Deployment", "DaemonSet", "StatefulSet"]
+    correct: [0]
+    explanation: "A Job runs pods until the task finishes successfully. A CronJob creates a Job on a cron schedule, like `0 2 * * *`. Deployments are for things that should run all the time."
+
+  - id: k8s-wl-007
+    type: mcq
+    subtopic: workloads
+    level: 1
+    prompt: What do labels and selectors do in Kubernetes?
+    options:
+      - "Labels are key-value tags on objects (like app=api); selectors pick objects by their labels, which is how Services and Deployments find their pods"
+      - "Labels are comments that Kubernetes ignores"
+      - "Selectors choose which node runs the control plane"
+      - "Labels set the container image"
+    correct: [0]
+    explanation: "A Service with `selector: app: api` sends traffic to every ready pod labeled `app=api`. A typo in a label is a classic reason for a Service with no endpoints. `kubectl get pods -l app=api` filters by label."
+
+  - id: k8s-wl-008
+    type: mcq
+    subtopic: workloads
+    level: 1
+    prompt: A pod's status is `Completed`. What does that mean?
+    options:
+      - "Its containers ran and exited successfully (exit code 0); normal for Jobs, a problem for a web server"
+      - "It's healthy and serving traffic"
+      - "It was deleted"
+      - "It's waiting for a node"
+    correct: [0]
+    explanation: "For a Job, Completed is the goal. For a Deployment, a container that exits (even with 0) gets restarted, and repeated restarts become CrashLoopBackOff."
+
+  - id: k8s-svc-004
+    type: mcq
+    subtopic: services
+    level: 2
+    prompt: "In a Service, what's the difference between `port` and `targetPort`?"
+    options:
+      - "`port` is the port the Service listens on; `targetPort` is the port on the pod (container) the traffic is sent to"
+      - "`port` is on the node; `targetPort` is on the load balancer"
+      - "They must always be equal"
+      - "`targetPort` is only used for UDP"
+    correct: [0]
+    explanation: "Example: `port: 80, targetPort: 8080` means clients call `my-svc:80` and the pods receive it on 8080. A wrong `targetPort` gives connection errors even though the endpoints look fine. NodePort is a third, separate port on every node."
+
+  - id: k8s-cfg-003
+    type: mcq
+    subtopic: config
+    level: 1
+    prompt: You changed a ConfigMap that a Deployment uses as **environment variables**, but the running pods still see the old values. Why, and what do you do?
+    options:
+      - "Env vars are read only when a container starts; restart the pods, e.g. with `kubectl rollout restart deployment/api`"
+      - "ConfigMaps can't be changed; you must delete and recreate them"
+      - "You need to wait 24 hours for it to sync"
+      - "You must restart the node"
+    correct: [0]
+    explanation: "Files from a mounted ConfigMap update by themselves after a while, but env vars don't. Helm charts often add a checksum of the ConfigMap as a pod annotation, so any config change triggers a rollout automatically."
+
+  - id: k8s-dep-004
+    type: command
+    subtopic: deployments
+    level: 1
+    prompt: Restart all pods of the Deployment `api` gradually (a rolling restart), without changing the image.
+    answers: ["kubectl rollout restart deployment/api"]
+    patterns: ['^kubectl rollout restart (deployment|deploy)[ /]api( -n \S+)?$']
+    samples: ["kubectl rollout restart deploy api", "kubectl rollout restart deployment api -n prod"]
+    rejects: ["kubectl delete pods --all", "kubectl rollout undo deployment/api"]
+    explanation: "It replaces the pods one by one like a normal rollout, so there's no downtime. Useful after changing a Secret or ConfigMap used as env vars. Deleting all pods at once causes an outage."
+
+  - id: k8s-kubectl-004
+    type: command
+    subtopic: kubectl
+    level: 1
+    tags: [il-common]
+    prompt: Show the full details and recent events of the pod `api-7d9f`.
+    answers: ["kubectl describe pod api-7d9f"]
+    patterns: ['^kubectl describe (pod|pods|po)[ /]api-7d9f( -n \S+)?$']
+    samples: ["kubectl describe po api-7d9f", "kubectl describe pod/api-7d9f", "kubectl describe pod api-7d9f -n prod"]
+    rejects: ["kubectl get pod api-7d9f", "kubectl logs api-7d9f"]
+    explanation: "`describe` shows the status of each container, its last state and exit code, the probes, the volumes, and at the bottom the **Events**, which usually explain Pending, ImagePullBackOff or probe failures."
+
+  - id: k8s-kubectl-005
+    type: command
+    subtopic: kubectl
+    level: 1
+    prompt: List the pods in the namespace `prod`.
+    answers: ["kubectl get pods -n prod"]
+    patterns: ['^kubectl get (pods|pod|po) (-n|--namespace)[ =]prod$', '^kubectl (-n|--namespace)[ =]prod get (pods|pod|po)$']
+    samples: ["kubectl get po -n prod", "kubectl get pods --namespace=prod", "kubectl -n prod get pods"]
+    rejects: ["kubectl get pods", "kubectl get pods -A"]
+    explanation: "Without `-n`, kubectl uses the namespace of the current context (usually `default`). `kubectl config set-context --current --namespace=prod` changes that default."
+
+  - id: k8s-kubectl-006
+    type: command
+    subtopic: kubectl
+    level: 1
+    prompt: Open an interactive shell inside the pod `api-7d9f`.
+    answers: ["kubectl exec -it api-7d9f -- sh", "kubectl exec -it api-7d9f -- bash"]
+    patterns: ['^kubectl exec (-it|-ti|-i -t|-t -i) api-7d9f (-c \S+ )?-- (/bin/)?(sh|bash)$']
+    samples: ["kubectl exec -ti api-7d9f -- bash", "kubectl exec -it api-7d9f -- /bin/sh"]
+    rejects: ["kubectl exec api-7d9f sh", "kubectl logs api-7d9f"]
+    explanation: "Everything after `--` is the command to run in the container. `-c` picks a container in a multi-container pod. If the image has no shell, use `kubectl debug`."
+
+  - id: k8s-kubectl-007
+    type: command
+    subtopic: kubectl
+    level: 1
+    prompt: Create or update the resources described in the file `deployment.yaml`.
+    answers: ["kubectl apply -f deployment.yaml"]
+    patterns: ['^kubectl apply (-f|--filename)[ =]deployment\.yaml( -n \S+)?$']
+    samples: ["kubectl apply --filename deployment.yaml", "kubectl apply -f deployment.yaml -n prod"]
+    rejects: ["kubectl apply deployment.yaml", "kubectl run -f deployment.yaml"]
+    explanation: "`-f` also takes a folder (`-f k8s/`) or a URL. Run `kubectl diff -f deployment.yaml` first to see what would change."
+
+  - id: k8s-kubectl-008
+    type: command
+    subtopic: kubectl
+    level: 1
+    prompt: List the Deployments in the current namespace.
+    answers: ["kubectl get deployments"]
+    patterns: ['^kubectl get (deployments|deployment|deploy)$']
+    samples: ["kubectl get deploy", "kubectl get deployment"]
+    rejects: ["kubectl get pods", "kubectl describe deployments"]
+    explanation: "The READY column (e.g. `2/3`) shows how many replicas are ready out of how many are wanted. UP-TO-DATE shows how many already run the latest version."
+
+  - id: k8s-kubectl-009
+    type: command
+    subtopic: kubectl
+    level: 2
+    prompt: List the events in the current namespace, sorted by time, so the newest are at the bottom.
+    answers: ["kubectl get events --sort-by=.metadata.creationTimestamp"]
+    patterns: ["^kubectl get (events|event|ev) --sort-by[= ]'?\\.?metadata\\.creationTimestamp'?( -n \\S+)?$", '^kubectl events( -n \S+)?$']
+    samples: ["kubectl get ev --sort-by='.metadata.creationTimestamp'", "kubectl events"]
+    rejects: ["kubectl get pods", "kubectl describe events"]
+    explanation: "Events show scheduling failures, image pulls, probe failures and OOM kills. They are kept only for about an hour. The newer `kubectl events` command sorts by time by itself."

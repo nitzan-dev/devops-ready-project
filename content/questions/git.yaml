@@ -1,0 +1,385 @@
+topic: git
+questions:
+  - id: git-basics-001
+    type: open
+    subtopic: basics
+    level: 1
+    prompt: Explain Git's working directory, staging area and repository. What do `git add` and `git commit` do?
+    rubric:
+      keyPoints:
+        - { text: "Working directory: your files as you edit them", weight: 2 }
+        - { text: "Staging area (index): the snapshot you're preparing for the next commit; git add puts changes there", weight: 3 }
+        - { text: "Repository (.git): committed history; git commit records the staged snapshot with a message", weight: 3 }
+        - { text: "git push sends commits to a remote; commits are local until pushed", weight: 1 }
+    modelAnswer: |
+      Git has three areas. The working directory is the files you're editing. The staging area, or index, is the snapshot you're building for the next commit: `git add file` copies the current version of that file into it, so you can choose exactly which changes go into a commit. `git commit` takes the staged snapshot and records it permanently in the local repository (the `.git` directory) with a message, an author and a pointer to the parent commit. Everything so far is local. `git push` sends your commits to the remote, like GitHub.
+    explanation: "`git status` shows all three areas, `git diff` shows unstaged changes, and `git diff --staged` shows what's staged."
+
+  - id: git-basics-002
+    type: mcq
+    subtopic: basics
+    level: 1
+    prompt: What's the difference between `git fetch` and `git pull`?
+    options:
+      - "fetch downloads new commits from the remote without changing your branch; pull = fetch + merge (or rebase) into your current branch"
+      - "pull only downloads tags"
+      - "fetch deletes local changes"
+      - "They are identical"
+    correct: [0]
+    explanation: '`git fetch` is always safe and lets you inspect `origin/main` first. `git pull --rebase` avoids "merge bubble" commits.'
+
+  - id: git-branch-001
+    type: open
+    subtopic: branching
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between `git merge` and `git rebase`? When would you avoid rebase?
+    rubric:
+      keyPoints:
+        - { text: "Merge combines branches with a merge commit, preserving the true history (non-linear)", weight: 3 }
+        - { text: "Rebase replays your commits on top of another branch, rewriting them (new hashes), giving a linear history", weight: 3 }
+        - { text: "Never rebase commits that others already pulled (shared/public branches); it rewrites history and forces push", weight: 3 }
+        - { text: "Common use: rebase your local feature branch on main before opening/merging a PR", weight: 1 }
+    modelAnswer: |
+      Both integrate changes from one branch into another. `merge` creates a merge commit that ties the two histories together. Nothing is rewritten, so the history is accurate but can get messy. `rebase` takes your commits and replays them one by one on top of the other branch, creating new commits with new hashes, which gives a clean linear history as if you'd started from the latest main. The golden rule: don't rebase commits other people already have, like a shared branch or main, because it rewrites history, forces a force-push and breaks their copies. Rebasing your own feature branch onto main before merging is fine and common.
+    explanation: "Squash-merging a PR is a third option: the whole branch becomes one commit on main."
+
+  - id: git-branch-002
+    type: open
+    subtopic: branching
+    level: 2
+    prompt: You get a merge conflict. What does it mean and how do you resolve it?
+    rubric:
+      keyPoints:
+        - { text: "Both branches changed the same lines (or one deleted a file the other edited), so Git can't decide automatically", weight: 3 }
+        - { text: "Git marks the conflicting sections with <<<<<<< ======= >>>>>>> in the files", weight: 2 }
+        - { text: "Edit to the correct combined result, remove markers, git add the file, then commit (or rebase --continue)", weight: 3 }
+        - { text: "Run tests after; can abort with merge --abort / rebase --abort", weight: 1 }
+    modelAnswer: |
+      A conflict means both sides changed the same part of a file differently, and Git won't guess which is right. `git status` lists the conflicted files, and inside them Git puts markers: `<<<<<<<` your version, `=======`, then their version and `>>>>>>>`. I edit the file into the correct final result, which is often a combination of both and not just picking one, remove the markers, `git add` the file, and finish with `git commit`, or `git rebase --continue` if I was rebasing. Then I run the tests, because a clean textual merge can still be logically wrong. If it goes badly, `git merge --abort` gets me back to where I started.
+    explanation: "Small, frequent merges (trunk-based development) mean fewer and smaller conflicts."
+
+  - id: git-branch-003
+    type: mcq
+    subtopic: branching
+    level: 2
+    prompt: "What is trunk-based development?"
+    options:
+      - "Everyone integrates small changes into the main branch frequently (short-lived branches, feature flags), keeping main always releasable"
+      - "A long-lived develop branch plus release and hotfix branches"
+      - "Each developer has a permanent personal branch"
+      - "Committing directly to production servers"
+    correct: [0]
+    explanation: "GitFlow (develop/release/hotfix branches) suits versioned products with scheduled releases. Trunk-based development suits CI/CD and frequent deploys."
+
+  - id: git-undo-001
+    type: open
+    subtopic: undo
+    level: 2
+    tags: [il-common]
+    prompt: What's the difference between `git revert` and `git reset`? Which do you use on a shared branch?
+    rubric:
+      keyPoints:
+        - { text: "revert creates a NEW commit that undoes an earlier commit; history is preserved", weight: 3 }
+        - { text: "reset moves the branch pointer back (rewrites history); --soft keeps changes staged, --mixed unstaged, --hard discards them", weight: 3 }
+        - { text: "On shared/pushed branches use revert; reset (and force push) only for local, unpushed work", weight: 3 }
+    modelAnswer: |
+      `git revert <commit>` adds a new commit that applies the opposite of the old one. History stays intact, so it's safe on shared branches like main: everyone just pulls the revert. `git reset` moves your branch pointer back to an earlier commit, effectively removing the later commits from the branch. `--soft` keeps their changes staged, `--mixed` (the default) keeps them in the working directory, and `--hard` throws them away. Because reset rewrites history, it's for local or unpushed work. On a pushed branch it requires a force push and breaks other people's clones. To undo a bad deploy commit on main, I'd revert.
+    explanation: "Lost something after a `reset --hard`? `git reflog` shows where HEAD has been, and you can usually recover."
+
+  - id: git-undo-002
+    type: command
+    subtopic: undo
+    level: 1
+    prompt: Undo the last commit **locally** (not pushed), but keep its changes staged.
+    answers: ["git reset --soft HEAD~1", "git reset --soft HEAD^"]
+    patterns: ['^git reset --soft HEAD(~1?|\^)$']
+    samples: ["git reset --soft HEAD~"]
+    rejects: ["git reset --hard HEAD~1", "git revert HEAD"]
+    explanation: '`HEAD~1` is the parent of the current commit. Useful for "I committed too early" or to redo the message. Just fixing the message is `git commit --amend`.'
+
+  - id: git-undo-003
+    type: mcq
+    subtopic: undo
+    level: 1
+    prompt: You need to switch branches but have uncommitted work you're not ready to commit. What do you use?
+    options: ["git stash (then git stash pop later)", "git reset --hard", "git clean -fd", "git revert"]
+    correct: [0]
+    explanation: '`git stash` saves your changes and cleans the working directory. `git stash pop` reapplies them. `git stash -u` also includes untracked files.'
+
+  - id: git-flow-001
+    type: open
+    subtopic: workflow
+    level: 1
+    prompt: Describe a good pull request workflow in a team.
+    rubric:
+      keyPoints:
+        - { text: "Short-lived feature branch from main; small focused changes", weight: 2 }
+        - { text: "Open a PR with a clear description; CI runs tests/lint/scans automatically", weight: 3 }
+        - { text: "Code review by teammates; branch protection requires approvals and passing checks", weight: 3 }
+        - { text: "Merge (often squash), delete the branch, deploy via pipeline", weight: 1 }
+    modelAnswer: |
+      I create a short-lived branch from an up-to-date main and keep the change small and focused. I open a pull request with a clear description of what and why, and link the ticket. CI runs automatically on the PR: build, lint, tests and security scans, and for infrastructure, a Terraform plan posted as a comment. Teammates review the code, and branch protection on main enforces at least one approval and green checks, so nobody can push straight to main. After approval it's merged, often squash-merged into one clean commit, the branch is deleted, and the merge triggers the deploy pipeline.
+    explanation: "CODEOWNERS can auto-request reviewers for sensitive paths like infrastructure."
+
+  - id: git-flow-002
+    type: mcq
+    subtopic: workflow
+    level: 1
+    prompt: What should go in `.gitignore` for a typical project? (Select all.)
+    options: ["node_modules/ and build output", ".env files with secrets", "terraform.tfstate and .terraform/", "The Dockerfile"]
+    correct: [0, 1, 2]
+    explanation: "Ignore generated and dependency folders, local secrets and Terraform state. The Dockerfile is source code. Note that `.gitignore` doesn't untrack files already committed (`git rm --cached`)."
+
+  - id: git-basics-003
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Show the commit history as one short line per commit.
+    answers: ["git log --oneline"]
+    patterns: ['^git log --oneline( --graph| --all| -n ?\d+| -\d+)*$']
+    samples: ["git log --oneline --graph", "git log --oneline -n 10"]
+    rejects: ["git status", "git log"]
+    explanation: "`--oneline` shows the short hash and the subject line. Add `--graph --all` to see branches and merges as a tree."
+
+  - id: git-basics-004
+    type: mcq
+    subtopic: basics
+    level: 1
+    prompt: What does `git clone` do?
+    options: ["Copies a remote repository, with its full history, to your machine", "Creates an empty repository", "Copies only the latest files without history", "Uploads your code to GitHub"]
+    correct: [0]
+    explanation: "`git clone URL` downloads the whole repository and sets up `origin` as the remote. `git init` creates an empty one."
+
+  - id: git-basics-005
+    type: mcq
+    subtopic: basics
+    level: 1
+    prompt: What is `origin` in Git?
+    options: ["The default name of the remote repository you cloned from", "The first commit in the repository", "The main branch", "A special tag"]
+    correct: [0]
+    explanation: "`origin` is just a name for a remote URL. `git remote -v` lists remotes; `origin/main` is your local copy of the remote's main branch."
+
+  - id: git-basics-006
+    type: open
+    subtopic: basics
+    level: 1
+    prompt: What is a commit in Git, and what makes a good commit?
+    rubric:
+      keyPoints:
+        - { text: "A commit is a saved snapshot of the project with an author, a message and a pointer to its parent", weight: 3 }
+        - { text: "It's identified by a hash (SHA)", weight: 1 }
+        - { text: "A good commit is small and focused on one logical change", weight: 2 }
+        - { text: "A clear message saying what changed and why", weight: 2 }
+        - { text: "It doesn't break the build and contains no secrets or generated files", weight: 1 }
+    modelAnswer: |
+      A commit is a saved snapshot of the whole project at a point in time, with the author, a date, a message and a pointer to the previous commit. It's identified by a hash, so history can't be changed silently. A good commit is small and does one logical thing, so it's easy to review and easy to revert. The message says what changed and why, like "Fix readiness probe path for api" rather than "fixes". And it shouldn't break the build or contain secrets or build output.
+    explanation: "Many teams use Conventional Commits (`feat:`, `fix:`, `chore:`) so changelogs and versions can be generated automatically."
+
+  - id: git-branch-004
+    type: command
+    subtopic: branching
+    level: 1
+    prompt: Create a new branch called `feature/login` and switch to it, in one command.
+    answers: ["git checkout -b feature/login", "git switch -c feature/login"]
+    samples: []
+    rejects: ["git branch feature/login", "git checkout feature/login"]
+    explanation: "`git switch -c` is the newer form; `git checkout -b` still works everywhere. `git branch name` only creates the branch without switching."
+
+  - id: git-branch-005
+    type: mcq
+    subtopic: branching
+    level: 2
+    prompt: What is a "fast-forward" merge?
+    options:
+      - "When the target branch has no new commits, Git just moves its pointer forward; no merge commit is created"
+      - "A merge that skips the tests"
+      - "A merge that deletes the source branch"
+      - "A merge done with --force"
+    correct: [0]
+    explanation: "If main hasn't moved since you branched, merging your branch just moves main forward to your last commit. `--no-ff` forces a merge commit anyway."
+
+  - id: git-branch-006
+    type: open
+    subtopic: branching
+    level: 2
+    prompt: What's the difference between GitFlow and trunk-based development? Which fits CI/CD better?
+    rubric:
+      keyPoints:
+        - { text: "GitFlow: long-lived develop branch plus feature, release and hotfix branches; releases are planned", weight: 3 }
+        - { text: "Trunk-based: everyone merges small changes into main often; short-lived branches; main always releasable", weight: 3 }
+        - { text: "Trunk-based fits CI/CD and frequent deploys; feature flags hide unfinished work", weight: 2 }
+        - { text: "GitFlow suits versioned products with scheduled releases or several supported versions", weight: 1 }
+    modelAnswer: |
+      GitFlow has a long-lived `develop` branch next to `main`, plus feature branches, release branches for preparing a version, and hotfix branches. It suits products that ship versions on a schedule or support several versions at once. Trunk-based development keeps one main branch: everyone merges small changes into it at least daily, branches live a day or two, and main is always deployable. Unfinished features hide behind feature flags. For CI/CD with frequent deploys, trunk-based is the better fit: fewer merge conflicts and faster feedback.
+    explanation: Most SaaS teams today work trunk-based with short-lived PR branches.
+
+  - id: git-undo-004
+    type: mcq
+    subtopic: undo
+    level: 1
+    prompt: You changed a file but haven't staged it, and you want to throw the change away. Which command?
+    options: ["git restore file.txt", "git revert file.txt", "git reset --soft file.txt", "git stash drop file.txt"]
+    correct: [0]
+    explanation: "`git restore file` puts the file back to the last commit (older form: `git checkout -- file`). `git restore --staged file` unstages without losing the change."
+
+  - id: git-undo-005
+    type: mcq
+    subtopic: undo
+    level: 2
+    prompt: You did `git reset --hard` and lost commits you needed. How can you get them back?
+    options:
+      - "git reflog shows where HEAD was before; reset or branch to that commit"
+      - "They're gone forever"
+      - "git revert --hard"
+      - "Only from a backup of the disk"
+    correct: [0]
+    explanation: "The reflog keeps a local history of where HEAD and branches pointed (about 90 days by default). Find the commit there and `git branch rescue <hash>`."
+
+  - id: git-undo-006
+    type: command
+    subtopic: undo
+    level: 2
+    prompt: Apply the single commit `a1b2c3d` from another branch onto your current branch.
+    answers: ["git cherry-pick a1b2c3d"]
+    samples: []
+    rejects: ["git merge a1b2c3d", "git rebase a1b2c3d"]
+    explanation: "Cherry-pick copies that one commit as a new commit on your branch. Handy for taking a hotfix into a release branch."
+
+  - id: git-flow-003
+    type: mcq
+    subtopic: workflow
+    level: 1
+    prompt: What is a pull request (merge request)?
+    options:
+      - "A request to merge your branch into another, where teammates review the code and CI runs checks"
+      - "A git command that downloads changes"
+      - "A way to delete a branch"
+      - "A request to get access to a repository"
+    correct: [0]
+    explanation: "PRs are where review, discussion and automated checks happen before code reaches main."
+
+  - id: git-flow-004
+    type: open
+    subtopic: workflow
+    level: 2
+    prompt: What is branch protection, and which rules would you set on main?
+    rubric:
+      keyPoints:
+        - { text: "Repository settings that restrict how a branch can change", weight: 2 }
+        - { text: "Require pull requests (no direct pushes) and at least one approving review", weight: 3 }
+        - { text: "Require CI status checks to pass before merging", weight: 3 }
+        - { text: "Block force pushes and deletion; optionally require up-to-date branches, signed commits, CODEOWNERS review", weight: 2 }
+    modelAnswer: |
+      Branch protection is a set of rules in GitHub or GitLab that limit how a branch can change. On main I'd require changes to come through pull requests, so nobody pushes directly, with at least one approving review. I'd require the CI checks, like build, tests and security scans, to pass before merging. I'd block force pushes and deletion of the branch. Optionally: require the branch to be up to date with main, require review from CODEOWNERS for sensitive folders like infrastructure, and require signed commits.
+    explanation: Branch protection turns "we usually review" into "we always review", which matters most for infrastructure repos.
+
+  # ---------- Added: basics ----------
+  - id: git-basics-007
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Show which files are changed, staged or untracked in your working directory.
+    answers: ["git status"]
+    patterns: ['^git status( -s| --short| -sb)?$']
+    samples: ["git status -s"]
+    rejects: ["git log", "git diff --staged"]
+    explanation: "Run it often. It also tells you which branch you're on and whether you're ahead of or behind the remote. `-s` gives a short two-column view."
+
+  - id: git-basics-008
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Show the changes you made to tracked files that are **not yet staged**.
+    answers: ["git diff"]
+    patterns: ['^git diff$']
+    samples: []
+    rejects: ["git diff --staged", "git status"]
+    explanation: "`git diff` compares the working directory with the staging area. `git diff --staged` (or `--cached`) shows what's staged and will go into the next commit."
+
+  - id: git-basics-009
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Commit the staged changes with the message `Fix login bug`.
+    answers: ["git commit -m 'Fix login bug'"]
+    patterns: ["^git commit (-m|--message)[ =]'Fix login bug'$"]
+    samples: ["git commit -m \"Fix login bug\"", "git commit --message 'Fix login bug'"]
+    rejects: ["git commit", "git push -m 'Fix login bug'"]
+    explanation: "Without `-m`, Git opens an editor for the message. `git commit -am` also stages changes to tracked files first, but never new files."
+
+  - id: git-basics-010
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Push the new local branch `feature/login` to `origin` for the first time, and set it to track the remote branch.
+    answers: ["git push -u origin feature/login"]
+    patterns: ['^git push (-u|--set-upstream) origin feature/login$']
+    samples: ["git push --set-upstream origin feature/login"]
+    rejects: ["git push", "git push origin main"]
+    explanation: "`-u` links your local branch to `origin/feature/login`, so later a plain `git push` or `git pull` knows where to go."
+
+  - id: git-branch-007
+    type: mcq
+    subtopic: branching
+    level: 1
+    prompt: What is a branch in Git, technically?
+    options:
+      - "A movable pointer to a commit; it moves forward as you make new commits"
+      - "A full copy of the repository"
+      - "A folder on the server"
+      - "A list of files"
+    correct: [0]
+    explanation: "That's why branches are cheap to create in Git. `HEAD` points to the branch you're on."
+
+  - id: git-branch-008
+    type: mcq
+    subtopic: branching
+    level: 1
+    prompt: What's the difference between a tag and a branch?
+    options:
+      - "A tag marks one specific commit and doesn't move (e.g. v1.2.0); a branch moves forward with new commits"
+      - "Tags can only be created on main"
+      - "A tag is a branch that was deleted"
+      - "There's no difference"
+    correct: [0]
+    explanation: "Tags mark releases, and CI often triggers release builds from them. Tags aren't pushed by default: `git push origin v1.2.0` or `git push --tags`."
+
+  - id: git-undo-007
+    type: mcq
+    subtopic: undo
+    level: 2
+    prompt: You made a commit on `main` by mistake; it should have been on a new branch. You haven't pushed. How do you fix it?
+    options:
+      - "Create a branch at the current commit (`git branch feature/x`), then move main back one commit (`git reset --hard HEAD~1`) and switch to the new branch"
+      - "Delete the repository and clone again"
+      - "Run `git revert` on main and push"
+      - "Rename main to feature/x"
+    correct: [0]
+    explanation: "The commit isn't lost: the new branch still points to it. Since nothing was pushed, rewriting local main is safe. If it was already pushed, talk to the team before rewriting a shared branch."
+
+  - id: git-flow-005
+    type: mcq
+    subtopic: workflow
+    level: 1
+    prompt: Which is the best commit message?
+    options:
+      - "\"Fix timeout in payment API retry logic\""
+      - "\"fix\""
+      - "\"changes\""
+      - "\"asdf\""
+    correct: [0]
+    explanation: "A short summary line in the imperative (\"Fix…\", \"Add…\"), and if needed a body explaining **why**. Some teams use conventional commits: `fix: …`, `feat: …`."
+
+  - id: git-flow-006
+    type: mcq
+    subtopic: workflow
+    level: 2
+    prompt: What does a "squash merge" of a pull request do?
+    options:
+      - "Combines all the PR's commits into one commit on the target branch"
+      - "Deletes the PR without merging"
+      - "Merges and keeps every commit plus a merge commit"
+      - "Rebases main onto the feature branch"
+    correct: [0]
+    explanation: "It keeps main's history clean (one commit per PR) and makes reverting a whole feature easy. The cost: the individual commits from the branch aren't kept on main."

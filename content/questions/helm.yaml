@@ -1,0 +1,348 @@
+topic: helm
+questions:
+  - id: helm-basics-001
+    type: open
+    subtopic: basics
+    level: 1
+    tags: [your-stack]
+    prompt: What is Helm, and what are a chart, a release and values?
+    rubric:
+      keyPoints:
+        - { text: "Helm is a package manager for Kubernetes: templated manifests installed as a unit", weight: 2 }
+        - { text: "Chart: a package (Chart.yaml, templates/, values.yaml)", weight: 3 }
+        - { text: "Release: an installed instance of a chart in a cluster/namespace, with revision history", weight: 3 }
+        - { text: "Values: configuration that fills the templates; overridden per environment with -f/--set", weight: 2 }
+    modelAnswer: |
+      Helm is the package manager for Kubernetes. A **chart** is a package: `Chart.yaml` with metadata and version, a `templates/` folder of Kubernetes manifests with Go-template placeholders, and `values.yaml` with defaults. When you install a chart you create a **release**, a named instance in a namespace, and Helm tracks its revisions so you can upgrade and roll back. **Values** fill in the templates, like the image tag, replica count or ingress host, and you override them per environment with `-f values-prod.yaml` or `--set`. So one chart can deploy the same app to staging and prod with different settings.
+    explanation: "My MyBroker chart has `values-staging.yaml` and `values-prod.yaml`, and Argo CD renders the chart with the matching file."
+
+  - id: helm-basics-002
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Install or upgrade the release `api` from the local chart `./chart` in namespace `prod`, using `values-prod.yaml`, creating the namespace if needed.
+    answers: ["helm upgrade --install api ./chart -n prod -f values-prod.yaml --create-namespace"]
+    patterns: ['^helm upgrade (?=.*(--install|-i\b))(?=.*(-n|--namespace)[ =]prod)(?=.*(-f|--values)[ =]values-prod\.yaml)(?=.*--create-namespace).*\bapi \./chart\b.*$', '^helm upgrade (?=.*(--install|-i\b))(?=.*(-n|--namespace)[ =]prod)(?=.*(-f|--values)[ =]values-prod\.yaml)(?=.*--create-namespace).*$']
+    samples: ["helm upgrade -i api ./chart --namespace prod --values values-prod.yaml --create-namespace", "helm upgrade --install api ./chart -f values-prod.yaml -n prod --create-namespace --wait"]
+    rejects: ["helm install api ./chart", "helm upgrade api ./chart -n prod -f values-prod.yaml"]
+    explanation: '`upgrade --install` is idempotent (install the first time, upgrade afterwards), which is ideal for pipelines. `--wait` / `--atomic` waits for readiness and rolls back on failure.'
+
+  - id: helm-tpl-001
+    type: mcq
+    subtopic: templating
+    level: 2
+    prompt: How can you see the exact Kubernetes manifests a chart will produce, without installing anything?
+    options: ["helm template ./chart -f values.yaml", "helm install --verbose", "kubectl get chart", "helm status"]
+    correct: [0]
+    explanation: "`helm template` renders locally. Pipe it into `kubeconform` to validate against the schemas. `helm install --dry-run --debug` also renders, but talks to the cluster. `helm lint` checks the chart structure."
+
+  - id: helm-tpl-002
+    type: mcq
+    subtopic: templating
+    level: 2
+    prompt: "What does `{{ .Values.image.tag | default .Chart.AppVersion }}` do in a template?"
+    options:
+      - "Uses image.tag from values, falling back to the chart's appVersion if it's empty"
+      - "Sets the chart version"
+      - "Fails if image.tag is missing"
+      - "Pins the image to latest"
+    correct: [0]
+    explanation: Helm uses Go templates plus Sprig functions (`default`, `quote`, `toYaml`, `include`, `required`). `required "msg" .Values.x` makes a missing value a clear error.
+
+  - id: helm-ops-001
+    type: open
+    subtopic: operations
+    level: 2
+    prompt: A `helm upgrade` broke the app. How do you roll back, and how do you see what changed?
+    rubric:
+      keyPoints:
+        - { text: "helm history <release> to list revisions", weight: 2 }
+        - { text: "helm rollback <release> <revision> to go back", weight: 3 }
+        - { text: "helm get values / get manifest per revision (or helm diff plugin) to compare changes", weight: 2 }
+        - { text: "With GitOps, revert the commit instead (Argo CD would otherwise re-sync the broken version)", weight: 2 }
+        - { text: "Prevent with --atomic/--wait and CI validation", weight: 1 }
+    modelAnswer: |
+      `helm history api -n prod` lists the revisions with their status, and `helm rollback api 12 -n prod` returns to a known good one, which re-applies its manifests. To see what changed, `helm get values` and `helm get manifest` with `--revision` show each version, or the `helm diff` plugin shows a diff before upgrading. If the app is managed by Argo CD, I'd revert the Git commit instead, because Argo CD would just sync the broken version back. For next time: `--atomic` makes Helm roll back automatically if the release doesn't become healthy, and CI should run `helm lint`, `helm template` and kubeconform.
+    explanation: "Helm stores release state as Secrets in the release's namespace (`sh.helm.release.v1.*`)."
+
+  - id: helm-ops-002
+    type: mcq
+    subtopic: operations
+    level: 1
+    prompt: What's the difference between `version` and `appVersion` in Chart.yaml?
+    options:
+      - "version is the chart's own version (bump when the chart changes); appVersion is the version of the application it deploys"
+      - "They must always be equal"
+      - "appVersion is the Kubernetes version"
+      - "version is the Helm CLI version"
+    correct: [0]
+    explanation: They change independently. A template fix bumps `version`, and a new app release bumps `appVersion` (and usually `version` too).
+
+  - id: helm-basics-003
+    type: mcq
+    subtopic: basics
+    level: 1
+    prompt: Which file in a Helm chart holds the default configuration values?
+    options: ["values.yaml", "Chart.yaml", "templates/_helpers.tpl", "requirements.txt"]
+    correct: [0]
+    explanation: "`values.yaml` holds the defaults. `Chart.yaml` holds the chart's name, version and dependencies, `templates/` holds the manifests, and `_helpers.tpl` holds reusable template snippets."
+
+  - id: helm-basics-004
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: List all Helm releases in all namespaces.
+    answers: ["helm list -A", "helm list --all-namespaces", "helm ls -A"]
+    patterns: ['^helm (list|ls) (-A|--all-namespaces)$']
+    samples: ["helm ls --all-namespaces"]
+    rejects: ["helm list", "kubectl get releases -A"]
+    explanation: "`helm list` alone shows only the current namespace. `-A` shows every namespace, and `-a` (lowercase) also includes failed and pending releases."
+
+  - id: helm-basics-005
+    type: mcq
+    subtopic: basics
+    level: 2
+    prompt: "Why use a Helm chart instead of plain Kubernetes YAML files?"
+    options:
+      - "One reusable package with variables per environment, plus versioned releases you can upgrade and roll back"
+      - "Helm makes pods run faster"
+      - "Kubernetes can't read plain YAML"
+      - "Helm replaces the need for kubectl entirely"
+    correct: [0]
+    explanation: "Plain YAML works, but you end up copying files per environment. A chart templates the differences (image tag, replicas, hosts) and Helm tracks each install as a release with history."
+
+  - id: helm-basics-006
+    type: open
+    subtopic: basics
+    level: 2
+    prompt: What is a chart dependency (subchart), and when would you use one?
+    rubric:
+      keyPoints:
+        - { text: "A chart can list other charts it needs under dependencies in Chart.yaml", weight: 3 }
+        - { text: "helm dependency update downloads them into charts/", weight: 2 }
+        - { text: "Use case: an app chart that brings its own Redis/PostgreSQL for dev, or an umbrella chart for several services", weight: 2 }
+        - { text: "Subchart values are set under the subchart's name in the parent values; can be toggled with condition", weight: 2 }
+    modelAnswer: |
+      A chart can declare other charts it needs in the `dependencies` section of `Chart.yaml`, with a name, a version range and a repository. `helm dependency update` downloads them into the `charts/` folder, and they're installed together with the parent. A common use is an app chart that pulls in Bitnami's PostgreSQL or Redis for development, or an "umbrella" chart that installs several microservices together. You configure a subchart from the parent's values under the subchart's name, for example `postgresql.auth.password`, and you can switch it on or off with a `condition` like `postgresql.enabled`.
+    explanation: In production, databases usually come from a managed service, so the subchart is disabled there.
+
+  - id: helm-tpl-003
+    type: mcq
+    subtopic: templating
+    level: 1
+    prompt: "How do you override a single value when installing a chart, without editing any file?"
+    options: ["helm install api ./chart --set image.tag=1.4.0", "helm install api ./chart image.tag=1.4.0", "helm install api ./chart --env image.tag=1.4.0", "helm install api ./chart --tag 1.4.0"]
+    correct: [0]
+    explanation: "`--set key=value` overrides one value. `-f file.yaml` overrides many. When both are used, `--set` wins, and later `-f` files win over earlier ones."
+
+  - id: helm-tpl-004
+    type: mcq
+    subtopic: templating
+    level: 2
+    prompt: What is `_helpers.tpl` used for in a chart?
+    options:
+      - "Reusable named templates (like the full name or common labels) included in other templates with include"
+      - "It holds the default values"
+      - "It's a test file that Helm runs after install"
+      - "It lists the chart's dependencies"
+    correct: [0]
+    explanation: 'Files starting with `_` aren''t rendered as manifests. They hold `define` blocks such as `mychart.labels`, used elsewhere with `{{ include "mychart.labels" . }}`, so labels stay identical everywhere.'
+
+  - id: helm-tpl-005
+    type: open
+    subtopic: templating
+    level: 2
+    prompt: How would you make one Helm chart deploy differently to staging and production?
+    rubric:
+      keyPoints:
+        - { text: "Keep one chart and put the differences in separate values files (values-staging.yaml, values-prod.yaml)", weight: 3 }
+        - { text: "Typical differences: replica count, resources, image tag, hostnames, feature toggles, autoscaling", weight: 2 }
+        - { text: "Pass the right file at install time (-f) or let Argo CD pick it per environment", weight: 2 }
+        - { text: "Secrets don't go in values files in Git; use a secret manager / External Secrets", weight: 2 }
+    modelAnswer: |
+      I keep a single chart with sensible defaults in `values.yaml`, and put only the differences in `values-staging.yaml` and `values-prod.yaml`: for example 1 replica in staging and 3 with an autoscaler in prod, bigger resource requests in prod, different hostnames and the image tag to deploy. At install time I pass the right file with `-f values-prod.yaml`, or in GitOps each Argo CD Application points to its own values file. Secrets never go into those files in Git; they come from a secret manager through External Secrets or similar.
+    explanation: "That's exactly how my MyBroker chart works: one chart, `values-staging.yaml` and `values-prod.yaml`, and Argo CD renders each environment."
+
+  - id: helm-ops-003
+    type: command
+    subtopic: operations
+    level: 1
+    prompt: Show the history of revisions for the release `api` in namespace `prod`.
+    answers: ["helm history api -n prod"]
+    patterns: ['^helm history api (-n|--namespace)[ =]prod$', '^helm history (-n|--namespace)[ =]prod api$']
+    samples: ["helm history api --namespace prod", "helm history -n prod api"]
+    rejects: ["helm list -n prod", "helm status api"]
+    explanation: "Each upgrade or rollback creates a numbered revision. `helm rollback api <revision> -n prod` goes back to one of them."
+
+  - id: helm-ops-004
+    type: mcq
+    subtopic: operations
+    level: 2
+    prompt: What does the `--atomic` flag do on `helm upgrade`?
+    options:
+      - "If the upgrade fails or the resources don't become ready in time, Helm rolls back automatically"
+      - "It upgrades all releases at once"
+      - "It skips running templates"
+      - "It makes the upgrade faster"
+    correct: [0]
+    explanation: "`--atomic` implies `--wait`. It's useful in CI pipelines so a failed deploy doesn't leave a half-broken release."
+
+  - id: helm-ops-005
+    type: open
+    subtopic: operations
+    level: 3
+    prompt: A `helm upgrade` fails with "another operation (install/upgrade/rollback) is in progress". What happened and how do you fix it?
+    rubric:
+      keyPoints:
+        - { text: "A previous operation was interrupted (CI cancelled, timeout, network) and left the release in a pending-install/pending-upgrade state", weight: 3 }
+        - { text: "Check with helm history / helm status to see the stuck revision", weight: 2 }
+        - { text: "Fix: helm rollback to the last good revision (or delete the stuck release secret if needed)", weight: 3 }
+        - { text: "Prevent: don't cancel deploy jobs mid-run, use CI concurrency, --atomic/--timeout", weight: 1 }
+    modelAnswer: |
+      Helm keeps the release state in a Secret in the namespace. If an upgrade is interrupted, for example a CI job was cancelled or timed out, the latest revision stays in a `pending-upgrade` state and Helm refuses to start another operation. I'd run `helm history api -n prod` to see the stuck revision, then `helm rollback api <last-good-revision> -n prod`, which puts the release back in a deployed state. In stubborn cases you delete the Secret of the stuck revision. To prevent it: don't let CI cancel running deploys (use a concurrency group), and use `--atomic` with a sensible `--timeout`.
+    explanation: "It's the same idea as a stuck Terraform state lock: an interrupted operation left a marker behind."
+
+  # ---------- Added: basics ----------
+  - id: helm-basics-007
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Add the Bitnami chart repository (`https://charts.bitnami.com/bitnami`) under the name `bitnami`.
+    answers: ["helm repo add bitnami https://charts.bitnami.com/bitnami"]
+    patterns: ['^helm repo add bitnami https://charts\.bitnami\.com/bitnami/?$']
+    samples: ["helm repo add bitnami https://charts.bitnami.com/bitnami/"]
+    rejects: ["helm add repo bitnami https://charts.bitnami.com/bitnami", "helm install bitnami"]
+    explanation: "After adding a repo you can install with `helm install my-redis bitnami/redis`. Many projects now publish charts to OCI registries instead, used directly as `oci://registry/path/chart`."
+
+  - id: helm-basics-008
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Download the latest list of charts from all the Helm repositories you've added.
+    answers: ["helm repo update"]
+    patterns: ['^helm repo update( \S+)?$']
+    samples: ["helm repo update bitnami"]
+    rejects: ["helm update", "helm repo list"]
+    explanation: "Like `apt update`: Helm keeps a local copy of each repo's index. Without updating, you won't see new chart versions."
+
+  - id: helm-basics-009
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Create a new chart skeleton in a folder called `myapp`.
+    answers: ["helm create myapp"]
+    patterns: ['^helm create myapp$']
+    samples: []
+    rejects: ["helm init myapp", "helm install myapp"]
+    explanation: "It creates `Chart.yaml`, `values.yaml`, a `templates/` folder with a Deployment, Service, Ingress, HPA and helpers, and `.helmignore`. A good starting point; delete what you don't need."
+
+  - id: helm-basics-010
+    type: mcq
+    subtopic: basics
+    level: 1
+    prompt: Which of these is the standard layout of a Helm chart folder?
+    options:
+      - "`Chart.yaml` (name and version), `values.yaml` (defaults), and `templates/` (the Kubernetes YAML templates)"
+      - "`Dockerfile`, `package.json` and `src/`"
+      - "`main.tf`, `variables.tf` and `outputs.tf`"
+      - "A single `chart.json` file"
+    correct: [0]
+    explanation: "There can also be `charts/` (dependencies), `values.schema.json` (to validate values), `templates/NOTES.txt` (printed after install) and `_helpers.tpl`."
+
+  - id: helm-basics-011
+    type: command
+    subtopic: basics
+    level: 1
+    prompt: Remove the release `api` from the namespace `prod`.
+    answers: ["helm uninstall api -n prod"]
+    patterns: ['^helm (uninstall|delete|del|un) api (-n|--namespace)[ =]prod$', '^helm (uninstall|delete|del|un) (-n|--namespace)[ =]prod api$']
+    samples: ["helm uninstall api --namespace prod", "helm uninstall -n prod api"]
+    rejects: ["helm rollback api -n prod", "kubectl delete ns prod"]
+    explanation: "It deletes all the Kubernetes objects the release created. PersistentVolumeClaims from StatefulSets usually stay, so data isn't lost by accident. `--keep-history` keeps the release record."
+
+  - id: helm-tpl-006
+    type: command
+    subtopic: templating
+    level: 2
+    prompt: Render the chart `./chart` with `values-prod.yaml` and print the resulting YAML, without touching the cluster.
+    answers: ["helm template api ./chart -f values-prod.yaml"]
+    patterns: ['^helm template (?=.*(-f|--values)[ =]values-prod\.yaml)(?=.*\./chart/?( |$)).*$']
+    samples: ["helm template api ./chart --values values-prod.yaml", "helm template ./chart -f values-prod.yaml"]
+    rejects: ["helm install api ./chart -f values-prod.yaml", "helm template api ./chart"]
+    explanation: "Pipe it to a validator in CI: `helm template ... | kubeconform -strict`. That catches broken YAML and wrong fields before anything is deployed."
+
+  - id: helm-tpl-007
+    type: mcq
+    subtopic: templating
+    level: 1
+    prompt: "In a Helm template, what does `{{ .Values.replicaCount }}` refer to?"
+    options:
+      - "The value `replicaCount` from values.yaml, or from whatever overrides it (-f files, --set)"
+      - "The current number of pods running in the cluster"
+      - "An environment variable on your machine"
+      - "A value from Chart.yaml"
+    correct: [0]
+    explanation: "Other built-in objects: `.Release.Name` and `.Release.Namespace`, `.Chart.Name` and `.Chart.Version`, and `.Capabilities` (cluster version info)."
+
+  - id: helm-tpl-008
+    type: mcq
+    subtopic: templating
+    level: 1
+    prompt: What does `helm lint ./chart` do?
+    options:
+      - "Checks the chart for mistakes: bad YAML, missing required files, and template errors"
+      - "Formats the YAML files"
+      - "Deploys the chart to a test namespace"
+      - "Scans the images for vulnerabilities"
+    correct: [0]
+    explanation: "Run it in CI on every PR, together with `helm template` + kubeconform. `--strict` turns warnings into failures."
+
+  - id: helm-tpl-009
+    type: mcq
+    subtopic: templating
+    level: 2
+    prompt: "You run `helm upgrade api ./chart -f base.yaml -f prod.yaml --set image.tag=1.5`. If all three set `image.tag`, which value wins?"
+    options:
+      - "`1.5` from --set; after that, the later -f file (prod.yaml) beats the earlier one, and the chart's values.yaml comes last"
+      - "base.yaml, because it's first"
+      - "The chart's values.yaml always wins"
+      - "Helm fails because of the conflict"
+    correct: [0]
+    explanation: "Order of priority, highest first: `--set`, then `-f` files from last to first, then the chart's `values.yaml`. Maps are merged key by key, but lists are replaced as a whole."
+
+  - id: helm-ops-006
+    type: command
+    subtopic: operations
+    level: 1
+    prompt: Show the values that the release `api` in namespace `prod` was installed with.
+    answers: ["helm get values api -n prod"]
+    patterns: ['^helm get values api (-n|--namespace)[ =]prod( -a| --all)?$', '^helm get values (-n|--namespace)[ =]prod api$']
+    samples: ["helm get values api --namespace prod", "helm get values api -n prod --all"]
+    rejects: ["helm show values ./chart", "helm get manifest api -n prod"]
+    explanation: "Without `--all` you see only the values you supplied; with it, all values including the chart defaults. `helm get manifest` shows the rendered YAML, and `helm show values` shows a chart's defaults."
+
+  - id: helm-ops-007
+    type: mcq
+    subtopic: operations
+    level: 1
+    prompt: What does `helm upgrade --install` do?
+    options:
+      - "Upgrades the release if it exists, or installs it if it doesn't, so the same command works for the first and every later deploy"
+      - "Installs a second copy of the release"
+      - "Upgrades Helm itself"
+      - "Installs only the chart's dependencies"
+    correct: [0]
+    explanation: "That's why CI pipelines use it: the command doesn't need to know whether the release already exists."
+
+  - id: helm-ops-008
+    type: mcq
+    subtopic: operations
+    level: 2
+    prompt: How can you see what a `helm upgrade` would change in the cluster before running it?
+    options:
+      - "Use the helm-diff plugin (`helm diff upgrade ...`), or `helm upgrade --dry-run` to render without applying"
+      - "Run `helm history`"
+      - "There's no way; just run it and roll back if needed"
+      - "Run `helm lint`"
+    correct: [0]
+    explanation: "`helm diff` compares the live release with what the upgrade would produce, like `terraform plan`. It's a common step in CI before a production upgrade."

@@ -1,0 +1,320 @@
+topic: aws
+questions:
+  aws-fund-001:
+    prompt: מה זה Regions ו-Availability Zones ב-AWS, ואיך משתמשים בהם כדי לקבל זמינות גבוהה?
+    keyPoints:
+      - "Region הוא אזור גאוגרפי נפרד (למשל eu-central-1), שיש בו כמה AZs"
+      - "AZ הוא מרכז נתונים אחד או יותר, מבודד, עם חשמל ורשת עצמאיים, ומחובר בחיבור מהיר ל-AZs האחרים באותו Region"
+      - "לזמינות גבוהה מפזרים משאבים על לפחות 2 או 3 AZs (subnets בכמה AZs, ASG, RDS Multi-AZ, load balancer על כמה AZs)"
+      - "כמה Regions: להתאוששות מאסון, לקרבה למשתמשים, או בגלל רגולציה; מורכב ויקר יותר"
+    modelAnswer: |
+      **Region** הוא אזור גאוגרפי, כמו `eu-central-1` (פרנקפורט) או `il-central-1` (תל אביב).
+      בכל Region יש כמה **Availability Zones**: מרכזי נתונים נפרדים פיזית, עם חשמל ורשת משלהם, שמחוברים בקווים מהירים.
+      AZ יכול ליפול לבד. לכן לזמינות גבוהה מפזרים על לפחות שניים או שלושה AZs:
+      - subnet בכל AZ.
+      - Auto Scaling group על כולם.
+      - load balancer שפרוס עליהם.
+      - RDS Multi-AZ, עם עותק מחכה ב-AZ אחר.
+      כמה Regions זו הרמה הבאה, להתאוששות מאסון או למשתמשים בכל העולם, אבל זה הרבה יותר מורכב בגלל העתקת הנתונים והעלות.
+    explanation: "הרבה שירותים שייכים ל-Region (S3 buckets, VPC), וחלק גלובליים (IAM, Route 53, CloudFront)."
+
+  aws-fund-002:
+    prompt: לפי מודל האחריות המשותפת (shared responsibility), מה מהבאים באחריות **הלקוח** ב-EC2?
+    options:
+      - "עדכוני אבטחה למערכת ההפעלה, הגדרת security groups, וניהול IAM והצפנת מידע"
+      - "האבטחה הפיזית של מרכזי הנתונים"
+      - "ה-hypervisor"
+      - "חומרת הרשת"
+    explanation: |
+      "אבטחה **של** הענן" (חומרה, מבנים, hypervisor) היא של AWS. "אבטחה **בתוך** הענן" (מערכת הפעלה, אפליקציות, מידע, IAM, הגדרות רשת) היא שלכם.
+      בשירותים מנוהלים כמו RDS או Lambda, AWS לוקחת חלק גדול יותר.
+
+  aws-fund-003:
+    prompt: מה זה AMI?
+    options:
+      - "Amazon Machine Image: תבנית (דיסק מערכת הפעלה והגדרות) שממנה מפעילים שרתי EC2"
+      - "סוג של הרשאת IAM"
+      - "סוכן ניטור"
+      - "סוג של load balancer"
+    explanation: "AWS וספקים מפרסמים AMIs (Ubuntu, Amazon Linux), ואפשר לבנות אחד משלכם עם התוכנה כבר מותקנת, למשל עם Packer. AMI שייך ל-Region."
+
+  aws-fund-004:
+    prompt: בדקו באיזה חשבון AWS ובאיזו זהות ה-AWS CLI שלכם משתמש עכשיו.
+    explanation: "מודפסים מספר החשבון, ה-ARN של המשתמש או ה-role, וה-ID. מריצים את זה ראשון בכל פעם שמקבלים AccessDenied, או לפני כל דבר מסוכן, כדי לוודא שאתם בחשבון הנכון."
+
+  aws-iam-001:
+    prompt: תסבירו מה זה IAM users, groups, roles ו-policies. למה עדיף roles על פני access keys?
+    keyPoints:
+      - "user: זהות עם פרטי התחברות קבועים (סיסמה או access keys), לאדם או (בעבר) לאפליקציה"
+      - "group: אוסף של users, שמצמידים אליו policies"
+      - "role: זהות שגורם מהימן לוקח לזמן מוגבל (EC2, Lambda, חשבון אחר, משתמש מ-SSO, CI דרך OIDC); נותנת הרשאות קצרות-מועד"
+      - "policy: מסמך JSON שמרשה או אוסר פעולות על משאבים (עם תנאים); מוצמד לזהויות או למשאבים"
+      - "roles חוסכים מפתחות קבועים שיכולים לדלוף; ההרשאות מתחלפות לבד"
+    modelAnswer: |
+      - **policy** הוא מסמך JSON שמרשה או אוסר פעולות על משאבים, למשל `s3:GetObject` על bucket אחד, ואפשר להוסיף תנאים. מצמידים policies לזהויות.
+      - **user** הוא זהות קבועה, עם סיסמה ו/או access keys.
+      - **group** הוא רק דרך להצמיד policies להרבה users בבת אחת.
+      - **role** הוא זהות בלי פרטי התחברות קבועים. גורם מהימן "לוקח" אותה ומקבל הרשאות זמניות. זה יכול להיות שרת EC2 (דרך instance profile), פונקציית Lambda, pod דרך IRSA, job של GitHub Actions דרך OIDC, או משתמש מחשבון אחר.
+      roles עדיפים כי אין סוד קבוע שיכול לדלוף או שצריך להחליף. אנשים מתחברים דרך SSO ל-roles, ו-workloads משתמשים ב-roles. אף פעם לא access keys בתוך קוד.
+    explanation: "סדר הבדיקה: Deny מפורש תמיד מנצח, אחריו Allow מפורש, ואם אין כלום, התשובה היא 'אסור'."
+
+  aws-iam-002:
+    prompt: ל-IAM user יש policy שמרשה `s3:*` על כל ה-buckets, ועוד policy עם Deny מפורש ל-`s3:DeleteBucket`. הוא יכול למחוק bucket?
+    options: ["לא: Deny מפורש תמיד גובר על כל Allow", "כן: Allow s3:* רחב יותר", "כן, אם הוא בקבוצת admin", "תלוי באיזה סדר הוצמדו ה-policies"]
+    explanation: "ברירת המחדל היא 'אסור', Allow מרשה, ו-Deny מפורש גובר על הכול (גם ב-SCP, ב-permission boundaries וב-policies של משאבים)."
+
+  aws-iam-003:
+    prompt: אפליקציה על EC2 צריכה לקרוא מ-S3 bucket אחד. איך נותנים לה גישה בצורה מאובטחת?
+    keyPoints:
+      - "יוצרים IAM role עם trust policy ל-EC2, ומצמידים אותו דרך instance profile"
+      - "policy מינימלית: רק s3:GetObject (ו-ListBucket אם צריך) על ה-ARN של ה-bucket הזה"
+      - "ה-SDK מקבל אוטומטית הרשאות זמניות משירות ה-metadata של השרת (IMDSv2)"
+      - "אין access keys בקוד, במשתני סביבה או ב-AMI"
+    modelAnswer: |
+      1. יוצרים IAM role, שה-trust policy שלו מרשה ל-EC2 לקחת אותו.
+      2. מצמידים אותו לשרת דרך instance profile.
+      3. נותנים לו policy מינימלית: `s3:GetObject` על `arn:aws:s3:::my-bucket/*`, ו-`s3:ListBucket` על ה-ARN של ה-bucket אם צריך לראות רשימה.
+      ה-AWS SDK על השרת מקבל לבד הרשאות קצרות-מועד משירות ה-metadata (רצוי רק IMDSv2), והן מתחלפות לבד.
+      כך אין access keys בקוד, בקובצי הגדרות, במשתני סביבה או ב-AMI.
+      ב-EKS אותו רעיון נקרא IRSA או EKS Pod Identity, ברמת ה-pod.
+    explanation: "אפשר להוסיף גם bucket policy שמגבילה את הגישה ל-role הזה או ל-VPC endpoint, כשכבת הגנה נוספת."
+
+  aws-iam-004:
+    prompt: מה צריך לעשות עם משתמש ה-**root** של חשבון AWS?
+    options:
+      - "להפעיל MFA, לא ליצור לו access keys, ולא לעבוד איתו ביום-יום; במקום זה IAM Identity Center (SSO) או IAM roles"
+      - "לעבוד איתו כל יום, כי יש לו את כל ההרשאות"
+      - "לשתף את הסיסמה שלו עם הצוות"
+      - "למחוק אותו"
+    explanation: "root יכול לעשות הכול, כולל לסגור את החשבון, ו-policies לא מגבילות אותו. רק פעולות בודדות צריכות אותו (כמו שינוי תוכנית התמיכה). נועלים אותו עם MFA."
+
+  aws-iam-005:
+    prompt: מה המשמעות של "הרשאות מינימליות" (least privilege)?
+    options:
+      - "לתת לכל אדם או שירות רק את ההרשאות שהוא צריך לעבודה שלו, ולא יותר"
+      - "לתת לכולם הרשאות קריאה בלבד"
+      - "לתת הרשאות admin רק בסופי שבוע"
+      - "להשתמש בכמה שפחות IAM users"
+    explanation: "אם מפתח או role עם `AdministratorAccess` דולפים, התוקף מקבל הכול. אם מותר רק `s3:GetObject` על bucket אחד, הנזק קטן. IAM Access Analyzer יכול להציע policies הדוקות יותר לפי מה שבאמת היה בשימוש."
+
+  aws-vpc-001:
+    prompt: מה ההבדל בין subnet ציבורי ל-subnet פרטי ב-VPC?
+    keyPoints:
+      - "בטבלת הניתוב של subnet ציבורי יש ניתוב של 0.0.0.0/0 ל-Internet Gateway"
+      - "משאבים שם יכולים לקבל כתובת ציבורית ולהיות נגישים מהאינטרנט (אם ה-SG מרשה): load balancers, bastion, NAT gateway"
+      - "ב-subnet פרטי אין ניתוב ל-IGW; יציאה לאינטרנט עוברת דרך NAT gateway שנמצא ב-subnet ציבורי"
+      - "שרתי אפליקציה ומסדי נתונים שמים ב-subnets פרטיים, בשביל האבטחה"
+    modelAnswer: |
+      ההבדל הוא בטבלת הניתוב.
+      ב-**subnet ציבורי** יש ניתוב של `0.0.0.0/0` ל-Internet Gateway. שרת עם כתובת ציבורית שם נגיש מהאינטרנט, לפי מה שה-security groups מרשים. לשם הולכים load balancers, NAT gateways, ואולי bastion.
+      ב-**subnet פרטי** אין ניתוב ל-Internet Gateway, ולכן אף אחד מהאינטרנט לא יכול להגיע ישירות לשרתים שם. אם הם צריכים לצאת (עדכונים, API חיצוני), הניתוב שלהם הולך ל-NAT gateway שנמצא ב-subnet ציבורי.
+      שרתי אפליקציה, ובמיוחד מסדי נתונים, שייכים ל-subnets פרטיים, ורק ה-load balancer חשוף.
+    explanation: "מבנה טיפוסי: subnet ציבורי, פרטי (ולפעמים עוד אחד מבודד למסד הנתונים) בכל אחד מ-3 AZs. VPC endpoints מאפשרים ל-subnets פרטיים להגיע ל-S3 ולשירותי AWS אחרים בלי NAT, וזה זול ובטוח יותר."
+
+  aws-vpc-002:
+    prompt: השוו בין Security Groups ל-Network ACLs.
+    keyPoints:
+      - "security groups מוצמדים לשרתים (או לכרטיסי רשת); NACLs מוצמדים ל-subnets"
+      - "SG הוא stateful (תשובה עוברת אוטומטית); NACL הוא stateless (צריך להרשות במפורש את פורטי החזרה)"
+      - "ב-SG יש רק חוקי היתר; ב-NACL יש היתר וחסימה, שנבדקים לפי סדר המספרים"
+      - "SG יכול להפנות ל-SG אחר כמקור (למשל מסד הנתונים מרשה ל-SG של האפליקציה בפורט 5432)"
+    modelAnswer: |
+      **Security groups** הם firewall וירטואלי על כל שרת או כרטיס רשת.
+      - הם **stateful**: אם תעבורה נכנסת מותרת, התשובה מותרת אוטומטית.
+      - יש בהם רק חוקי היתר.
+      - יכולת מצוינת: להפנות ל-security group אחר. "ה-SG של מסד הנתונים מרשה פורט 5432 מה-SG של האפליקציה", בלי לנהל כתובות IP.
+      **Network ACLs** עובדים בגבול של ה-subnet.
+      - הם **stateless**: צריך להרשות במפורש גם את תעבורת החזרה (הפורטים 1024 עד 65535).
+      - יש בהם חוקי היתר וחסימה ממוספרים, שנבדקים לפי הסדר.
+      בפועל, security groups עושים את רוב העבודה, ו-NACLs הם שכבה גסה נוספת, למשל לחסום טווח IP זדוני לכל ה-subnet.
+    explanation: "timeout לשרת EC2? בודקים את ה-SG, אחר כך את ה-NACL, אחר כך את טבלת הניתוב, ואז את ה-firewall של מערכת ההפעלה."
+
+  aws-vpc-003:
+    prompt: שרתים ב-subnet פרטי לא מצליחים להוריד חבילות מהאינטרנט. מה החלק החסר הסביר?
+    options:
+      - "NAT gateway (ב-subnet ציבורי), וניתוב של 0.0.0.0/0 אליו בטבלת הניתוב של ה-subnet הפרטי"
+      - "Internet Gateway שמחובר ישירות ל-subnet הפרטי"
+      - "כתובת ציבורית לכל שרת"
+      - "סוג שרת גדול יותר"
+    explanation: "subnets פרטיים יוצאים לאינטרנט דרך NAT. לשירותי AWS (S3, ECR, SSM), VPC endpoints חוסכים את עלויות עיבוד הנתונים של NAT."
+
+  aws-vpc-004:
+    prompt: שני VPCs (10.0.0.0/16 ו-10.0.0.0/16) בחשבונות שונים צריכים לתקשר באופן פרטי. מה הבעיה?
+    options:
+      - "טווחי כתובות חופפים: peering או ניתוב דרך Transit Gateway לא יעבדו; צריך טווחים שלא חופפים (או NAT או PrivateLink)"
+      - "peering אף פעם לא עובד בין חשבונות"
+      - "הם צריכים כתובות ציבוריות"
+      - "אין בעיה"
+    explanation: "לכן מתכננים את טווחי ה-CIDR מראש (IPAM). PrivateLink יכול לחשוף שירות אחד, בלי ניתוב מלא בין הרשתות."
+
+  aws-vpc-005:
+    prompt: מה זה VPC?
+    options:
+      - "רשת פרטית ומבודדת משלכם בתוך AWS, עם טווח כתובות, subnets וניתוב משלה"
+      - "שרת וירטואלי"
+      - "לקוח VPN"
+      - "שירות אחסון"
+    explanation: "בוחרים את ה-CIDR (למשל 10.0.0.0/16), מחלקים אותו ל-subnets ב-AZs שונים, ושולטים בתעבורה עם טבלאות ניתוב, security groups ו-NACLs. בכל Region יש VPC ברירת מחדל, אבל בפרויקטים אמיתיים יוצרים אחד משלכם."
+
+  aws-vpc-006:
+    prompt: מה עושה Internet Gateway (IGW)?
+    options:
+      - "מחבר VPC לאינטרנט; subnets שיש להם ניתוב אליו הם ציבוריים"
+      - "מאפשר לשרתים פרטיים לצאת לאינטרנט בלי להיות נגישים"
+      - "מחבר שני VPCs"
+      - "מסנן תעבורה כמו firewall"
+    explanation: "IGW אחד לכל VPC. subnet הופך לציבורי כשטבלת הניתוב שלו שולחת `0.0.0.0/0` ל-IGW. יציאה בלבד ל-subnets פרטיים היא התפקיד של NAT gateway."
+
+  aws-comp-001:
+    prompt: איך Auto Scaling Group ו-Application Load Balancer עובדים יחד כדי לתת לאפליקציית web זמינות גבוהה?
+    keyPoints:
+      - "ה-ASG שומר על מספר רצוי של שרתי EC2 (מ-launch template) בכמה AZs, ומחליף שרתים לא תקינים"
+      - "הוא גדל וקטן לפי מדיניות (target tracking על CPU, מספר בקשות ועוד)"
+      - "ה-ALB מחלק בקשות בין השרתים התקינים ב-target group, ובודק את תקינותם"
+      - "ה-ASG רושם שרתים חדשים ב-target group אוטומטית, ויכול להשתמש בבדיקות התקינות של ה-LB"
+    modelAnswer: |
+      ה-**Auto Scaling group** מפעיל שרתים מ-launch template בכמה AZs, ושומר על הכמות בין המינימום למקסימום. אם שרת מת או נכשל בבדיקות תקינות, הוא מוחלף.
+      עם מדיניות target tracking, הוא מוסיף שרתים כשנניח ממוצע ה-CPU או מספר הבקשות לשרת עובר את היעד, ומוריד כשהעומס יורד.
+      ה-**Application Load Balancer** יושב מלפנים, ב-subnets ציבוריים על כל ה-AZs. הוא בודק את השרתים ב-target group שלו, ושולח תעבורה רק לתקינים.
+      ה-ASG רושם שרתים חדשים ב-target group לבד. אם מפעילים בדיקות תקינות של ELB, שרת שה-LB רואה כלא תקין יוחלף.
+      כך נפילה של AZ או של שרת לא מפילה את האתר.
+    explanation: השרתים חייבים להיות stateless (sessions ב-Redis או במסד נתונים, קבצים ב-S3), כי כל שרת יכול להימחק או להתחלף בכל רגע.
+
+  aws-comp-002:
+    prompt: מתי בוחרים Network Load Balancer (NLB) על פני Application Load Balancer (ALB)?
+    options:
+      - "לתעבורת TCP או UDP שאינה HTTP, לביצועים גבוהים מאוד והשהיה נמוכה, או כשצריך כתובות IP קבועות; ALB מיועד ל-HTTP(S) עם ניתוב לפי נתיב או host"
+      - "כשצריך ניתוב לפי נתיב"
+      - "כשרוצים חיבור ל-WAF"
+      - "אף פעם; ALB עושה הכול"
+    explanation: "ALB עובד בשכבה 7 (HTTP, HTTPS, gRPC, חוקים לפי host ונתיב, WAF, התחברות OIDC). NLB עובד בשכבה 4 (TCP, UDP, TLS, כתובת IP קבועה בכל AZ, ושומר על כתובת המקור)."
+
+  aws-comp-003:
+    prompt: איזו אפשרות רכישה של EC2 מתאימה למשימת batch בלי מצב, שיכולה לסבול הפסקות, במחיר הכי נמוך?
+    options: ["Spot Instances", "On-Demand", "Dedicated Hosts", "Reserved Instances לשעה"]
+    explanation: "Spot יכול להיות זול עד בערך 90%, אבל AWS יכולה לקחת אותו בחזרה עם התראה של 2 דקות. לעומס בסיס קבוע: Savings Plans או Reserved Instances. לעומס קופצני ולא צפוי: On-Demand."
+
+  aws-comp-004:
+    prompt: כתובת ה-IP הציבורית של שרת EC2 השתנתה אחרי שעצרתם והפעלתם אותו. איך שומרים כתובת ציבורית קבועה?
+    options:
+      - "מקצים Elastic IP ומצמידים אותה לשרת (או עדיף, שמים load balancer או שם DNS מלפנים)"
+      - "עושים restart במקום stop"
+      - "משתמשים בסוג שרת גדול יותר"
+      - "שמים אותו ב-subnet פרטי"
+    explanation: "כתובת ציבורית רגילה משתחררת כשעוצרים את השרת. Elastic IP נשארת שלכם עד שמשחררים אותה. שימו לב ש-AWS גובה כסף על כתובות IPv4 ציבוריות. באפליקציות web, לקוחות צריכים לפנות לשם DNS שמצביע ל-load balancer, לא לכתובת של שרת."
+
+  aws-stor-001:
+    prompt: השוו בין S3, EBS ו-EFS. מתי משתמשים בכל אחד?
+    keyPoints:
+      - "S3: אחסון אובייקטים דרך HTTP API, כמעט בלי הגבלת גודל, עמיד מאוד; קבצים סטטיים, גיבויים, לוגים, data lake, artifacts"
+      - "EBS: דיסק (block storage) שמחובר לשרת EC2 אחד (ב-AZ אחד); דיסקים של מערכת הפעלה, מסדי נתונים על EC2"
+      - "EFS: מערכת קבצים מנוהלת (NFS) שהרבה שרתים בכמה AZs יכולים לחבר; קבצים משותפים"
+      - "שיקולי עלות וביצועים (S3 הכי זול לג'יגה; EFS הכי יקר)"
+    modelAnswer: |
+      **S3** הוא אחסון אובייקטים: מעלים ומורידים קבצים שלמים דרך HTTP API. הוא גדל בלי הגבלה ועמיד מאוד. מתאים לקבצים סטטיים, גיבויים, לוגים, artifacts של בנייה ו-data lakes, עם storage classes וחוקי lifecycle כדי לחסוך. זה לא דיסק שמחברים למסד נתונים.
+      **EBS** הוא דיסק וירטואלי שמחובר לשרת EC2 אחד, ב-AZ אחד. מתאים לדיסק של מערכת ההפעלה ולמסדי נתונים שרצים על EC2, ומגבים אותו עם snapshots.
+      **EFS** הוא מערכת קבצים מנוהלת (NFS), שהרבה שרתים, גם ב-AZs שונים, יכולים לחבר באותו זמן. טוב לתוכן משותף. הוא הכי יקר לג'יגה.
+    explanation: "ב-Kubernetes: EBS משמש ל-PVCs מסוג ReadWriteOnce, ו-EFS ל-ReadWriteMany."
+
+  aws-stor-002:
+    prompt: מה ההבדל בין RDS Multi-AZ ל-read replicas?
+    keyPoints:
+      - "Multi-AZ: עותק מחכה (standby) שמתעדכן מיד (סינכרוני) ב-AZ אחר, לזמינות גבוהה ומעבר אוטומטי; העותק לא משרת קריאות (בגרסה הקלאסית)"
+      - "read replicas: עותקים שמתעדכנים באיחור קל (אסינכרוני), כדי לחלק עומס של קריאות (אפשר גם ב-Region אחר)"
+      - "replicas יכולים לפגר; אפשר לקדם אחד ידנית להתאוששות מאסון"
+    modelAnswer: |
+      **Multi-AZ** נועד לזמינות. RDS מחזיק עותק מחכה ב-AZ אחר, שמתעדכן מיד. אם השרת הראשי נופל, או בזמן תחזוקה, הוא עובר אוטומטית לעותק: כתובת ה-DNS עוברת אליו, בדרך כלל תוך דקה או שתיים. בגרסה הקלאסית העותק לא מקבל תעבורה.
+      **read replicas** נועדו לגדילה. אלה עותקים שמתעדכנים באיחור קל, ושולחים אליהם שאילתות קריאה כבדות. הם יכולים להיות גם ב-Regions אחרים. בגלל האיחור הם יכולים לפגר מעט. אפשר לקדם אחד ידנית לראשי, וזה שימושי להתאוששות מאסון בין Regions.
+      הרבה מערכות ב-production משתמשות בשניהם.
+    explanation: "Aurora עובד אחרת: האחסון משותף לכל ה-AZs, וה-replicas משמשים גם כיעד למעבר בזמן תקלה."
+
+  aws-stor-003:
+    prompt: איך מונעים מ-S3 bucket להפוך לציבורי בטעות?
+    options:
+      - "מפעילים S3 Block Public Access (ברמת החשבון וברמת ה-bucket), ומשתמשים ב-bucket policies מינימליות"
+      - "נותנים ל-bucket שם ארוך"
+      - "מפעילים versioning"
+      - "שמים אותו ב-subnet פרטי"
+    explanation: "Block Public Access מופעל כברירת מחדל ב-buckets חדשים. תוכן ציבורי מגישים דרך CloudFront עם Origin Access Control, ולא דרך bucket ציבורי. S3 בכלל לא נמצא ב-subnet."
+
+  aws-stor-004:
+    prompt: העלו את הקובץ המקומי `backup.tar.gz` ל-S3 bucket בשם `my-backups`.
+    explanation: "`aws s3 cp SOURCE DEST`, כמו `cp`. `aws s3 sync dir/ s3://bucket/dir/` מעתיק רק מה שהשתנה. עם `cp` מוסיפים `--recursive` כדי להעתיק תיקייה שלמה."
+
+  aws-stor-005:
+    prompt: הציגו את האובייקטים ב-S3 bucket בשם `my-backups`.
+    explanation: "`aws s3 ls` בלי bucket מציג את רשימת ה-buckets. ב-S3 אין תיקיות אמיתיות: `logs/2026/` הוא רק התחלה משותפת של שמות האובייקטים."
+
+  aws-stor-006:
+    prompt: ממה מגן הפעלת **versioning** ב-S3 bucket?
+    options:
+      - "מדריסה ומחיקה בטעות: גרסאות ישנות נשמרות ואפשר לשחזר אותן"
+      - "מכך שה-bucket יהפוך לציבורי"
+      - "מעלויות גבוהות"
+      - "מהורדות איטיות"
+    explanation: "עם versioning, מחיקה רק מוסיפה סימון מחיקה, ודריסה שומרת את הגרסה הקודמת. גרסאות ישנות עולות כסף, אז מוסיפים חוק lifecycle שמוחק אותן אחרי זמן. ב-bucket של Terraform state תמיד מפעילים versioning."
+
+  aws-cont-001:
+    prompt: השוו בין EKS, ECS ו-Lambda להרצת שירות. מתי הייתם בוחרים בכל אחד?
+    keyPoints:
+      - "EKS: Kubernetes עם control plane מנוהל; נייד, עם המון כלים (Helm, Argo CD), אבל יותר מורכב ודורש יותר תחזוקה"
+      - "ECS: ה-orchestrator של AWS, פשוט יותר, משולב היטב ב-AWS; עם Fargate אין שרתים לנהל"
+      - "Lambda: פונקציות, מופעלות מאירועים, יורדות לאפס, משלמים לפי בקשה; מגבלת זמן (15 דקות), cold starts, לא לשירותים שרצים כל הזמן"
+      - "הבחירה תלויה בידע של הצוות, בניידות, בדפוס התעבורה ובעלות"
+    modelAnswer: |
+      **EKS** הוא Kubernetes מנוהל: AWS מריצה את ה-control plane, ואתם את ה-nodes (או Fargate). מקבלים את כל הכלים של Kubernetes (Helm, Argo CD, operators) וניידות בין עננים, אבל יש מורכבות תפעולית אמיתית ותשלום לכל cluster.
+      **ECS** הוא ה-orchestrator של AWS עצמה. הוא פשוט יותר, עם פחות מושגים, ומשולב היטב ב-IAM וב-ALB. עם Fargate לא מנהלים שרתים בכלל. מצוין לצוות קטן שכולו ב-AWS.
+      **Lambda** מריץ פונקציות בתגובה לאירועים: HTTP דרך API Gateway, העלאה ל-S3, הודעות בתור. הוא יורד לאפס ומשלמים לכל הפעלה, אבל כל הרצה מוגבלת ל-15 דקות ויש cold starts. לכן הוא מתאים לעבודה קופצנית שמופעלת מאירועים, ולא לשירות שרץ כל הזמן.
+    explanation: "פרויקט הקורס שלי משתמש ב-Kubernetes (kind מקומית). ב-AWS אותו Helm chart ואותו Argo CD היו רצים על EKS."
+
+  aws-cont-002:
+    prompt: מה זה Amazon ECR?
+    options:
+      - "ה-registry הפרטי של AWS ל-Docker images"
+      - "שירות Kubernetes"
+      - "שירות CI/CD"
+      - "מסד נתונים"
+    explanation: "ה-CI דוחף images ל-ECR, ו-EKS, ECS או Lambda מושכים אותם עם הרשאות IAM, כך שאין סיסמה נפרדת ל-registry. יש בו סריקת images ו-lifecycle policies (מחיקת images ישנים)."
+
+  aws-ops-001:
+    prompt: באיזה שירות AWS משתמשים כדי לאסוף מטריקות ולוגים ולהגדיר התראות?
+    options: ["CloudWatch", "CloudTrail", "Config", "Inspector"]
+    explanation: "CloudWatch = מטריקות, לוגים, התראות ודשבורדים. CloudTrail = יומן ביקורת של קריאות API (מי עשה מה). Config = היסטוריית הגדרות של משאבים ובדיקת עמידה בכללים. Inspector = סריקת חולשות."
+
+  aws-ops-002:
+    prompt: מישהו מחק חוק ב-security group ב-production. איפה מגלים מי עשה את זה ומתי?
+    options: ["CloudTrail", "CloudWatch Metrics", "VPC Flow Logs", "Trusted Advisor"]
+    explanation: "CloudTrail רושם קריאות API, עם הזהות, הזמן וכתובת המקור. VPC Flow Logs רושמים מידע על תעבורת רשת, לא שינויים בהגדרות."
+
+  aws-ops-003:
+    prompt: החשבון ב-AWS פתאום הוכפל. איך חוקרים את זה, ומה הסיבות הנפוצות?
+    keyPoints:
+      - "Cost Explorer: פירוק לפי שירות, Region, סוג שימוש ותגיות, כדי למצוא מה גדל"
+      - "סיבות נפוצות: שרתים שנשכחו או גדולים מדי, עיבוד נתונים ב-NAT gateway, תעבורה החוצה, דיסקי EBS ו-snapshots שלא בשימוש, לוגים בלי מחיקה, מפתחות שדלפו ומריצים כריית קריפטו"
+      - "מגדירים התראות של Budgets ו-Anomaly Detection, ותגיות עלות, כדי לתפוס את זה מוקדם"
+      - "תיקון: התאמת גודל, ניקוי, Savings Plans או Spot, VPC endpoints, חוקי lifecycle"
+    modelAnswer: |
+      פותחים את Cost Explorer ומקבצים לפי שירות, ואחר כך לפי סוג שימוש, Region ותגיות, כדי למצוא בדיוק מה גדל ומתי.
+      החשודים הרגילים:
+      - שרתים שמישהו הפעיל ושכח, או שגדולים מדי.
+      - עלויות עיבוד נתונים ב-NAT gateway מתעבורה כבדה ל-S3 או ל-ECR (נפתר עם VPC endpoints).
+      - תעבורה שיוצאת מ-AWS.
+      - דיסקי EBS שלא מחוברים ו-snapshots ישנים.
+      - CloudWatch Logs בלי זמן מחיקה.
+      - במקרה הגרוע: מפתחות שדלפו ומריצים כריית קריפטו ב-Region שלא משתמשים בו. אם אין הסבר, בודקים ב-CloudTrail.
+      כדי לתפוס את זה בפעם הבאה: התראות של AWS Budgets, Cost Anomaly Detection ותגיות עקביות. ואז חוסכים: התאמת גודל, Spot ו-Savings Plans, וחוקי lifecycle.
+    explanation: "מודעות לעלויות (FinOps) היא יתרון לג'וניור. אזכור של עלויות NAT gateway מראה ניסיון אמיתי."
+
+  aws-ops-004:
+    prompt: ב-Route 53, איזו רשומה מאפשרת להפנות את הדומיין הראשי (`example.com`) ל-ALB?
+    options: ["רשומת Alias מסוג A או AAAA", "CNAME על הדומיין הראשי", "רשומת MX", "רשומת TXT"]
+    explanation: "אסור לשים CNAME על הדומיין הראשי. רשומות Alias של Route 53 מצביעות על משאבי AWS (ALB, CloudFront, אתר S3), והשאילתות עליהן חינם. סוגי ניתוב: simple, weighted, latency, failover, geolocation."
+
+  aws-ops-005:
+    prompt: מה זה CloudWatch alarm?
+    options:
+      - "חוק שעוקב אחרי מטריקה (למשל CPU מעל 80% במשך 5 דקות) ומבצע פעולה, כמו שליחת הודעה ב-SNS או הגדלת ASG"
+      - "קובץ לוג"
+      - "רשימה של קריאות API"
+      - "דוח חיוב"
+    explanation: "ל-alarm יש שלושה מצבים: OK, ALARM ו-INSUFFICIENT_DATA. הוא יכול להודיע לאנשים (SNS למייל, Slack או PagerDuty) או להפעיל אוטומציה כמו Auto Scaling."

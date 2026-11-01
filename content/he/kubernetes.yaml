@@ -1,0 +1,517 @@
+topic: kubernetes
+questions:
+  k8s-arch-001:
+    prompt: תארו את הרכיבים העיקריים של cluster ב-Kubernetes, ומה כל אחד עושה.
+    keyPoints:
+      - "ב-control plane: ה-kube-apiserver הוא שער הכניסה; כל הרכיבים ו-kubectl מדברים איתו"
+      - "etcd: מסד נתונים של מפתח-ערך, ששומר את כל המצב של ה-cluster"
+      - "kube-scheduler משבץ pods שמחכים לשרתים (nodes)"
+      - "kube-controller-manager מריץ לולאות בקרה, שמקרבות את המצב בפועל למצב הרצוי (ReplicaSet, nodes, endpoints ועוד)"
+      - "בכל node: kubelet (מריץ ובודק pods דרך ה-container runtime), kube-proxy (חוקי הרשת של Services), ו-container runtime (containerd)"
+    modelAnswer: |
+      יש **control plane**, ויש **worker nodes**.
+      ב-control plane:
+      - **API server**: שער הכניסה. kubectl, שאר הרכיבים וה-controllers קוראים וכותבים את המצב דרכו.
+      - **etcd**: מסד הנתונים ששומר את כל המצב של ה-cluster.
+      - **scheduler**: מחפש pods שעוד אין להם node, ובוחר node לפי משאבים, affinity ו-taints.
+      - **controller manager**: מריץ לולאות בקרה. למשל, ה-controller של ReplicaSet רואה 2 pods כשצריך 3, ויוצר עוד אחד.
+      בכל worker node:
+      - **kubelet**: מקבל מה-API server אילו pods צריכים לרוץ אצלו, מבקש מה-container runtime (containerd) להריץ אותם, ומדווח על מצבם.
+      - **kube-proxy**: מגדיר חוקי iptables או IPVS, כדי שכתובת של Service תגיע ל-pods הנכונים.
+      ובנוסף תוספים כמו CoreDNS, ו-CNI plugin לרשת של ה-pods.
+    explanation: "הכול הצהרתי: שומרים את המצב הרצוי ב-etcd דרך ה-API server, וה-controllers מקרבים את המציאות אליו. זה הרעיון המרכזי."
+    followUps: ["מה קורה, צעד אחר צעד, כשמריצים kubectl apply -f deployment.yaml?"]
+
+  k8s-arch-002:
+    prompt: הרצתם `kubectl apply -f deployment.yaml`. סדרו את מה שקורה אחר כך.
+    steps:
+      - "kubectl שולח את הקובץ ל-API server, שבודק מי אתם, אם מותר לכם, ואם הקובץ תקין"
+      - "אובייקט ה-Deployment נשמר ב-etcd"
+      - "ה-controller של ה-Deployment יוצר ReplicaSet, וה-controller של ה-ReplicaSet יוצר אובייקטים של Pod"
+      - "ה-scheduler משבץ כל Pod שמחכה ל-node"
+      - "ה-kubelet באותו node אומר ל-container runtime למשוך את ה-image ולהפעיל את הקונטיינרים"
+    explanation: כל רכיב רק עוקב אחרי ה-API server, ומגיב לאובייקטים שמעניינים אותו. זה דפוס ה-controller.
+
+  k8s-arch-003:
+    prompt: איזה רכיב שומר את המצב של ה-cluster, ולכן חייבים לגבות אותו?
+    options: ["etcd", "kube-scheduler", "kubelet", "CoreDNS"]
+    explanation: "לאבד את etcd זה לאבד את המצב של ה-cluster. שירותים מנוהלים (EKS, GKE, AKS) מריצים ומגבים את ה-control plane בשבילכם. עם GitOps, הקבצים ב-Git הם עוד דרך לבנות מחדש."
+
+  k8s-arch-004:
+    prompt: מה עושה ה-kubelet?
+    options:
+      - "סוכן שרץ על כל node, מוודא שהקונטיינרים שהוגדרו לו רצים ותקינים, ומדווח ל-API server"
+      - "משבץ pods ב-nodes"
+      - "כלי שורת הפקודה לעבודה מול ה-cluster"
+      - "שומר את ההגדרות של ה-cluster"
+    explanation: "ה-kubelet מריץ את ה-probes, מפעיל מחדש קונטיינרים לפי ה-restartPolicy, מחבר volumes, ומדווח על מצב ה-node וה-pods. `kubectl` הוא כלי שורת הפקודה; ה-kubelet הוא הסוכן על ה-node."
+
+  k8s-arch-005:
+    prompt: מה זה namespace ב-Kubernetes?
+    options:
+      - "דרך לחלק cluster אחד לקבוצות נפרדות של משאבים, למשל לפי צוות או לפי סביבה, עם שמות, מכסות והרשאות משלהן"
+      - "cluster פיזי נפרד"
+      - "שרת DNS"
+      - "סוג של node"
+    explanation: |
+      שם צריך להיות ייחודי רק בתוך namespace. אפשר להגדיר RBAC ו-ResourceQuota לכל namespace.
+      namespaces **לא** מבודדים תעבורת רשת בעצמם; בשביל זה צריך NetworkPolicy. nodes ו-PersistentVolumes לא שייכים לשום namespace.
+
+  k8s-wl-001:
+    prompt: מה ההבדל בין Pod, ReplicaSet ו-Deployment? למה בדרך כלל לא יוצרים Pods ישירות?
+    keyPoints:
+      - "Pod הוא היחידה הקטנה ביותר שרצה: קונטיינר אחד או יותר, שחולקים כתובת IP ו-volumes"
+      - "ReplicaSet דואג שירוצו N pods זהים (ויוצר חדשים אם הם מתים)"
+      - "Deployment מנהל ReplicaSets, ונותן עדכון הדרגתי וחזרה לגרסה קודמת"
+      - "Pod לבד לא נוצר מחדש אם הוא או ה-node שלו מתים; ה-controllers נותנים ריפוי עצמי"
+    modelAnswer: |
+      **Pod** הוא היחידה הקטנה ביותר ש-Kubernetes מריץ: קונטיינר אחד או יותר, שחולקים כתובת IP, רשת ו-volumes, ותמיד רצים יחד על אותו node.
+      **ReplicaSet** דואג שירוץ מספר מסוים של pods זהים, ומחליף כל pod שמת.
+      **Deployment** יושב מעל ReplicaSets ומנהל גרסאות. כשמחליפים image, הוא יוצר ReplicaSet חדש ומעביר אליו pods בהדרגה (rolling update), והוא יודע לחזור לגרסה הקודמת.
+      לא יוצרים pods לבד, כי אף אחד לא ייצור אותם מחדש אם הם קורסים או שה-node שלהם נופל. עם Deployment מקבלים ריפוי עצמי, שינוי כמות ועדכונים בטוחים.
+    explanation: "בפועל: Deployment לאפליקציות בלי מצב (stateless), StatefulSet למסדי נתונים, DaemonSet לסוכן בכל node, ו-Job או CronJob למשימות חד-פעמיות."
+
+  k8s-wl-002:
+    prompt: צריך סוכן לאיסוף לוגים שירוץ על **כל** node, כולל nodes שיתווספו בעתיד. איזה סוג workload?
+    options: ["DaemonSet", "Deployment עם replicas כמספר ה-nodes", "StatefulSet", "CronJob"]
+    explanation: "DaemonSet מריץ pod אחד על כל node (או על כל node מתאים), ומוסיף pod אוטומטית כשמצטרף node. שימושים: שליחת לוגים (Fluent Bit), node-exporter, סוכני רשת ואחסון."
+
+  k8s-wl-003:
+    prompt: מתי משתמשים ב-StatefulSet במקום Deployment? מה הוא מבטיח?
+    keyPoints:
+      - "לאפליקציות עם מצב (מסדי נתונים, Kafka, ZooKeeper, Elasticsearch), שצריכות זהות ואחסון קבועים"
+      - "שמות pods קבועים וממוספרים (db-0, db-1), ושם DNS קבוע דרך headless Service"
+      - "כל pod מקבל PersistentVolumeClaim משלו (volumeClaimTemplates), שנשאר איתו גם כשהוא עובר node"
+      - "יצירה, שינוי כמות ועדכון לפי סדר ובצורה מסודרת"
+    modelAnswer: |
+      StatefulSet מיועד לאפליקציות שבהן לכל עותק יש זהות, כמו cluster של מסד נתונים או Kafka.
+      - כל pod מקבל שם קבוע וממוספר (`db-0`, `db-1`), ושם DNS קבוע דרך headless Service, כך שהעותקים מוצאים זה את זה.
+      - דרך `volumeClaimTemplates` כל pod מקבל PersistentVolumeClaim משלו. אם `db-1` עובר ל-node אחר, הוא חוזר עם אותו דיסק.
+      - pods נוצרים, משנים כמות ומתעדכנים לפי הסדר.
+      Deployment, לעומת זאת, מתייחס ל-pods כאל זהים וניתנים להחלפה: שמות אקראיים, ואם יש volume, הוא משותף. זה מתאים לאפליקציות web בלי מצב.
+    explanation: הרבה צוותים מריצים את מסדי הנתונים בשירות מנוהל (RDS וכדומה) במקום StatefulSet בתוך ה-cluster, כדי לחסוך את עבודת התחזוקה.
+
+  k8s-wl-004:
+    prompt: שני קונטיינרים באותו Pod צריכים לדבר. איך הם מגיעים זה לזה?
+    options:
+      - "דרך localhost, כי הם חולקים את הרשת של ה-pod, או דרך volume משותף"
+      - "רק דרך Service של Kubernetes"
+      - "הם לא יכולים לדבר"
+      - "דרך כתובת ה-IP הציבורית של ה-node"
+    explanation: "לקונטיינרים ב-pod יש IP ופורטים משותפים, ולכן שניהם לא יכולים להאזין לאותו פורט. זה דפוס ה-sidecar: proxy, שולח לוגים או טוען הגדרות, לצד האפליקציה הראשית."
+
+  k8s-wl-005:
+    prompt: בשביל מה משתמשים ב-**init container**?
+    options:
+      - "הוא רץ עד הסוף לפני שקונטיינרי האפליקציה מתחילים, למשל כדי לחכות לשירות אחר, להריץ migrations או להביא הגדרות"
+      - "הוא רץ לצד האפליקציה כל הזמן"
+      - "הוא מאתחל את ה-node"
+      - "זה ה-image הראשון שנמשך ב-cluster"
+    explanation: init containers רצים אחד אחרי השני, וכל אחד חייב להצליח לפני שהקונטיינרים הראשיים מתחילים. pod שתקוע ב-`Init:0/1` אומר בדרך כלל שה-init container נכשל או מחכה.
+
+  k8s-wl-006:
+    prompt: צריך להריץ סקריפט גיבוי של מסד נתונים כל לילה ב-02:00, בתוך ה-cluster. באיזה משאב משתמשים?
+    options: ["CronJob", "Deployment", "DaemonSet", "StatefulSet"]
+    explanation: "Job מריץ pods עד שהמשימה מצליחה. CronJob יוצר Job לפי לוח זמנים של cron, למשל `0 2 * * *`. Deployment מיועד לדברים שצריכים לרוץ כל הזמן."
+
+  k8s-wl-007:
+    prompt: מה התפקיד של labels ו-selectors ב-Kubernetes?
+    options:
+      - "labels הן תגיות מפתח-ערך על אובייקטים (כמו app=api); selectors בוחרים אובייקטים לפי ה-labels שלהם, וכך Services ו-Deployments מוצאים את ה-pods שלהם"
+      - "labels הן הערות ש-Kubernetes מתעלם מהן"
+      - "selectors בוחרים איזה node מריץ את ה-control plane"
+      - "labels קובעות את ה-image של הקונטיינר"
+    explanation: "Service עם `selector: app: api` שולח תעבורה לכל pod מוכן שיש לו `app=api`. טעות הקלדה ב-label היא סיבה קלאסית ל-Service בלי endpoints. `kubectl get pods -l app=api` מסנן לפי label."
+
+  k8s-wl-008:
+    prompt: הסטטוס של pod הוא `Completed`. מה זה אומר?
+    options:
+      - "הקונטיינרים שלו רצו והסתיימו בהצלחה (קוד יציאה 0); תקין ל-Job, בעיה לשרת web"
+      - "הוא תקין ומקבל תעבורה"
+      - "הוא נמחק"
+      - "הוא מחכה ל-node"
+    explanation: "ב-Job, Completed זו המטרה. ב-Deployment, קונטיינר שמסתיים (גם עם 0) מופעל מחדש, והפעלות חוזרות הופכות ל-CrashLoopBackOff."
+
+  k8s-svc-001:
+    prompt: למה צריך Services ב-Kubernetes? תסבירו ClusterIP, NodePort ו-LoadBalancer.
+    keyPoints:
+      - "pods באים והולכים והכתובות שלהם משתנות; Service נותן כתובת ושם DNS קבועים, ומחלק תעבורה בין ה-pods שמתאימים ל-selector"
+      - "ClusterIP (ברירת המחדל): נגיש רק מתוך ה-cluster"
+      - "NodePort: פותח פורט (30000 עד 32767) בכל node, שמעביר ל-Service"
+      - "LoadBalancer: מבקש מספק הענן load balancer חיצוני שמצביע על ה-Service"
+      - "Endpoints או EndpointSlices מחזיקים את הכתובות של ה-pods המוכנים; רק pods מוכנים מקבלים תעבורה"
+    modelAnswer: |
+      pods נוצרים ונמחקים, והכתובות שלהם משתנות. לכן לקוחות צריכים משהו קבוע.
+      **Service** בוחר pods לפי label, ונותן להם כתובת IP קבועה ושם DNS כמו `api.default.svc.cluster.local`. הוא מחלק את התעבורה בין ה-pods המוכנים. kube-proxy מממש את זה עם חוקי iptables או IPVS.
+      הסוגים:
+      - **ClusterIP**: ברירת המחדל. נגיש רק מתוך ה-cluster, לתקשורת בין שירותים.
+      - **NodePort**: בנוסף פותח את אותו פורט (30000 עד 32767) בכל node, כך שאפשר להגיע מבחוץ דרך כל node.
+      - **LoadBalancer**: בנוסף מבקש מהענן ליצור load balancer חיצוני, כמו NLB ב-AWS, ששולח אליו תעבורה.
+      ל-HTTP בדרך כלל פותחים LoadBalancer אחד ל-ingress controller, במקום אחד לכל Service.
+    explanation: "יש גם `ExternalName` (רשומת CNAME לשרת חיצוני) ו-headless Service (`clusterIP: None`, ה-DNS מחזיר ישירות את כתובות ה-pods; StatefulSets משתמשים בזה)."
+    followUps: ["מה ההבדל בין Service ל-Ingress?"]
+
+  k8s-svc-002:
+    prompt: Service קיים, אבל בקשות אליו נכשלות, ו-`kubectl get endpoints my-svc` מראה `<none>`. מה הסיבה הסבירה?
+    options:
+      - "ה-selector של ה-Service לא מתאים ל-labels של ה-pods, או שאין pod מתאים שהוא Ready"
+      - "ה-Service חייב להיות מסוג LoadBalancer"
+      - "CoreDNS לא עובד"
+      - "התגית של ה-image שגויה"
+    explanation: "אין endpoints = אין pod מוכן שמתאים ל-selector. משווים את `kubectl get svc my-svc -o yaml` (ה-selector) מול `kubectl get pods --show-labels`, בודקים את ה-readiness probes, ובודקים ש-`targetPort` מתאים לפורט של הקונטיינר."
+
+  k8s-svc-003:
+    prompt: pod ב-namespace בשם `shop` רוצה לפנות ל-Service בשם `payments` ב-namespace בשם `billing`, בפורט 8080. איזו כתובת תעבוד?
+    options: ["http://payments.billing:8080", "http://payments:8080", "http://billing.payments:8080", "http://payments.shop.svc:8080"]
+    explanation: "השם הקצר `payments` עובד רק באותו namespace (בזכות ה-search domains ב-/etc/resolv.conf). בין namespaces כותבים `service.namespace`, או את השם המלא `payments.billing.svc.cluster.local`."
+
+  k8s-svc-004:
+    prompt: ב-Service, מה ההבדל בין `port` ל-`targetPort`?
+    options:
+      - "`port` הוא הפורט שה-Service מאזין לו; `targetPort` הוא הפורט ב-pod (בקונטיינר) שאליו התעבורה נשלחת"
+      - "`port` הוא על ה-node; `targetPort` על ה-load balancer"
+      - "הם תמיד חייבים להיות שווים"
+      - "`targetPort` משמש רק ל-UDP"
+    explanation: "דוגמה: `port: 80, targetPort: 8080` אומר שלקוחות פונים ל-`my-svc:80`, וה-pods מקבלים את זה ב-8080. `targetPort` שגוי נותן שגיאות חיבור, גם כשה-endpoints נראים תקינים. NodePort הוא פורט שלישי ונפרד, על כל node."
+
+  k8s-ing-001:
+    prompt: מה זה Ingress, ובמה הוא שונה מ-Service מסוג LoadBalancer?
+    keyPoints:
+      - "Ingress הוא משאב ניתוב בשכבה 7 (HTTP/HTTPS): חוקים לפי host ולפי נתיב, אל Services"
+      - "צריך ingress controller (nginx, Traefik, AWS LB Controller) שבאמת מבצע את הניתוב"
+      - "נקודת כניסה אחת (load balancer אחד) משרתת הרבה שירותים, ומפענחת TLS"
+      - "Service מסוג LoadBalancer עובד בשכבה 4, אחד לכל Service; יותר עלות ויותר כתובות"
+    modelAnswer: |
+      **Ingress** הוא סט של חוקי ניתוב ל-HTTP: שלח את `api.example.com` ל-Service של ה-api, את `example.com/static` ל-frontend, ופענח TLS עם התעודה הזאת.
+      לבד הוא לא עושה כלום. **ingress controller**, כמו ingress-nginx או Traefik, עוקב אחרי אובייקטי Ingress ומגדיר את ה-proxy שלו לפיהם. ה-controller עצמו בדרך כלל חשוף דרך Service אחד מסוג LoadBalancer.
+      **Service מסוג LoadBalancer** עובד בשכבה 4 (TCP), ונותן load balancer אחד בענן לכל Service, בלי ניתוב לפי host או נתיב.
+      כלומר עם Ingress, הרבה שירותים חולקים נקודת כניסה אחת וכתובת אחת, ומקבלים TLS, הפניות וניתוב לפי נתיב.
+    explanation: "ב-cluster של kind בפרויקט MyBroker השתמשתי ב-Traefik כ-ingress controller, ו-cert-manager הנפיק תעודות TLS מ-CA מקומי. ה-**Gateway API** החדש הוא היורש של Ingress."
+
+  k8s-ing-002:
+    prompt: יצרתם Ingress, אבל אף אחד לא עונה על שם האתר. מה הדבר **הראשון** לבדוק?
+    options:
+      - "האם יש ingress controller מותקן ורץ, וה-ingressClassName של ה-Ingress מתאים לו?"
+      - "האם ה-pods משתמשים ב-image האחרון"
+      - "האם etcd תקין"
+      - "האם HPA מופעל"
+    explanation: "בלי controller (או עם class לא מתאים), אף אחד לא מטפל ב-Ingress. אחר כך בודקים שה-DNS מצביע לכתובת של ה-controller, מריצים `kubectl describe ingress`, ובודקים שלשירות שמאחור יש endpoints."
+
+  k8s-cfg-001:
+    prompt: מה ההבדל בין ConfigMap ל-Secret? האם Secrets מאובטחים?
+    keyPoints:
+      - "שניהם מכניסים הגדרות ל-pods, כמשתני סביבה או כקבצים"
+      - "ConfigMap להגדרות רגילות; Secret למידע רגיש (סיסמאות, tokens, תעודות)"
+      - "Secrets רק מקודדים ב-base64, הם לא מוצפנים כברירת מחדל; כל מי שיש לו הרשאת קריאה ב-RBAC יכול לפענח אותם"
+      - "הגנה: RBAC, הצפנה של etcd (KMS), מנהלי secrets חיצוניים (Vault, AWS Secrets Manager עם External Secrets או CSI), ו-Sealed Secrets או SOPS בשביל Git"
+    modelAnswer: |
+      שניהם שומרים מפתח-ערך שמכניסים ל-pods כמשתני סביבה או כקבצים. ConfigMap להגדרות רגילות, Secret לערכים רגישים.
+      אבל Secret הוא רק **מקודד ב-base64**, וזו לא הצפנה. כל מי שמורשה לקרוא אותו ב-RBAC יכול לפענח אותו, וכברירת מחדל הוא נשמר ב-etcd בלי הצפנה.
+      כדי שיהיו בטוחים:
+      - RBAC הדוק, כך שרק ה-pods והאנשים שצריכים יוכלו לקרוא.
+      - הצפנה של etcd עם KMS.
+      - הכי טוב: לשמור את ה-secrets האמיתיים במנהל כמו Vault או AWS Secrets Manager, ולסנכרן אותם פנימה עם External Secrets Operator או ה-CSI driver.
+      אף פעם לא עושים commit לקובץ Secret רגיל ב-Git. אם צריך אותם ב-GitOps, משתמשים ב-Sealed Secrets או SOPS.
+    explanation: "ConfigMaps ו-Secrets שמחוברים כקבצים מתעדכנים ב-pod (אחרי זמן מה), אבל משתני סביבה משתנים רק כשה-pod מופעל מחדש."
+
+  k8s-cfg-002:
+    prompt: צרו בפקודה Secret מסוג generic בשם `db-creds`, עם המפתח `password` והערך `s3cr3t`.
+    explanation: "מפענחים אותו עם `kubectl get secret db-creds -o jsonpath='{.data.password}' | base64 -d`, וזה מראה כמה base64 קל לפענוח. שימו לב: הערך נשמר גם בהיסטוריה של ה-shell."
+
+  k8s-cfg-003:
+    prompt: שיניתם ConfigMap ש-Deployment משתמש בו כ**משתני סביבה**, אבל ה-pods שרצים עדיין רואים את הערכים הישנים. למה, ומה עושים?
+    options:
+      - "משתני סביבה נקראים רק כשקונטיינר מתחיל; מפעילים מחדש את ה-pods, למשל עם `kubectl rollout restart deployment/api`"
+      - "אי אפשר לשנות ConfigMap; צריך למחוק וליצור מחדש"
+      - "צריך לחכות 24 שעות לסנכרון"
+      - "צריך להפעיל מחדש את ה-node"
+    explanation: "קבצים מ-ConfigMap מחובר מתעדכנים לבד אחרי זמן מה, אבל משתני סביבה לא. Helm charts מוסיפים הרבה פעמים checksum של ה-ConfigMap כ-annotation ל-pod, כך שכל שינוי בהגדרות מפעיל rollout אוטומטית."
+
+  k8s-probe-001:
+    prompt: מה ההבדל בין liveness probe ל-readiness probe? מה קורה כשכל אחד מהם נכשל?
+    keyPoints:
+      - "liveness: האם הקונטיינר חי ותקין; בכישלון ה-kubelet **מפעיל מחדש** את הקונטיינר"
+      - "readiness: האם הוא יכול לקבל תעבורה עכשיו; בכישלון ה-pod **יוצא** מה-endpoints של ה-Service (לא מופעל מחדש)"
+      - "startup probe: לאפליקציות שעולות לאט; הוא עוצר את שאר ה-probes עד שהוא מצליח"
+      - "liveness לא צריך להיות תלוי בשירותים חיצוניים (מסד נתונים), אחרת תקלה שם גורמת לגל של הפעלות מחדש"
+    modelAnswer: |
+      שניהם בדיקות תקינות שה-kubelet מריץ: HTTP, TCP או פקודה.
+      **liveness** שואל: "התהליך תקוע?". אם הוא נכשל מספיק פעמים, ה-kubelet הורג את הקונטיינר ומפעיל אותו מחדש.
+      **readiness** שואל: "ה-pod הזה צריך לקבל תעבורה עכשיו?". אם הוא נכשל, ה-pod יוצא מה-endpoints של ה-Service, אבל **לא** מופעל מחדש. כשהבדיקה עוברת שוב, הוא מקבל שוב תעבורה. זה מה שרוצים בזמן עלייה, חימום או עומס זמני.
+      יש גם **startup** probe לאפליקציות שעולות לאט. הוא מעכב את שאר הבדיקות עד שהאפליקציה למעלה.
+      טעות נפוצה: לבדוק את מסד הנתונים ב-liveness. כשיש למסד הפרעה קטנה, כל ה-pods מופעלים מחדש בבת אחת.
+    explanation: "ה-endpoint `/api/health` ב-MyBroker עונה בכוונה מהזיכרון, בלי לפנות ל-API חיצוניים. כך תקלה אצלם אף פעם לא גורמת ל-Kubernetes להפעיל מחדש pods תקינים."
+
+  k8s-probe-002:
+    prompt: אפליקציית Java עולה תוך 90 שניות, ונכנסת ללולאה של הפעלות מחדש בזמן העלייה. מה התיקון הנקי ביותר?
+    options:
+      - "להוסיף startupProbe עם failureThreshold × periodSeconds גדול מספיק; ה-liveness מתחיל רק אחרי שהוא מצליח"
+      - "להוריד את כל ה-probes"
+      - "להגדיל את מגבלת הזיכרון"
+      - "להגדיר restartPolicy: Never"
+    explanation: "בלי startup probe, ה-liveness מתחיל לבדוק מוקדם מדי והורג את הקונטיינר לפני שהוא עלה. אפשר להגדיל את `initialDelaySeconds`, אבל startup probe מתמודד טוב יותר עם זמני עלייה משתנים."
+
+  k8s-res-001:
+    prompt: מה ההבדל בין requests ל-limits של משאבים? מה קורה כשקונטיינר עובר את מגבלת הזיכרון, ומה כשהוא עובר את מגבלת ה-CPU?
+    keyPoints:
+      - "requests: מה שה-scheduler שומר; לפיהם הוא מחליט לאיזה node ה-pod נכנס"
+      - "limits: המקסימום שהקונטיינר יכול להשתמש (נאכף על ידי cgroups)"
+      - "מעבר על מגבלת הזיכרון: הקונטיינר נהרג (OOMKilled, קוד 137) ומופעל מחדש"
+      - "מעבר על מגבלת ה-CPU: הקונטיינר מואט (throttling), לא נהרג"
+      - "מחלקות QoS (Guaranteed, Burstable, BestEffort) קובעות מי מפונה קודם כש-node עמוס"
+    modelAnswer: |
+      **requests** הם מה שה-scheduler מסתכל עליו: pod שמבקש 500m CPU ו-256Mi זיכרון ייכנס רק ל-node שיש בו כל כך הרבה מקום פנוי שלא הובטח לאחרים.
+      **limits** הם התקרה, ו-cgroups אוכפים אותה.
+      זיכרון ו-CPU מתנהגים אחרת:
+      - **זיכרון** אי אפשר לקחת בחזרה. קונטיינר שעובר את המגבלה נהרג על ידי הקרנל, ו-Kubernetes מפעיל אותו מחדש (קוד 137, הסיבה OOMKilled).
+      - **CPU** אפשר לחלק. מעבר על המגבלה רק מאט את האפליקציה (throttling), היא לא נהרגת.
+      requests ו-limits קובעים גם את מחלקת ה-QoS. pods מסוג Guaranteed (requests = limits) מפונים אחרונים כשנגמר הזיכרון ב-node, ו-BestEffort (בלי הגדרות) ראשונים.
+    explanation: "הרבה צוותים מגדירים זיכרון request = limit, ו-request ל-CPU בלי limit, כדי להימנע מהאטה מיותרת. תמיד מגדירים requests; בלעדיהם ה-scheduler עיוור."
+
+  k8s-res-002:
+    prompt: 'pod תקוע ב-`Pending`, ו-`kubectl describe pod` אומר `0/3 nodes are available: 3 Insufficient memory`. מה זה אומר?'
+    options:
+      - "לאף node אין מספיק זיכרון פנוי (שלא הובטח לאחרים) בשביל ה-REQUEST של ה-pod; מורידים את ה-request, מפנים מקום או מוסיפים nodes"
+      - "הקונטיינר משתמש ביותר מדי זיכרון ונהרג"
+      - "מגבלת הזיכרון נמוכה מה-request"
+      - "ה-image גדול מדי"
+    explanation: "השיבוץ מסתכל על **requests** מול הקיבולת של ה-node, לא על השימוש בפועל. `kubectl describe node` מראה 'Allocated resources'. ה-Cluster Autoscaler מוסיף nodes כש-pods מחכים מהסיבה הזאת."
+
+  k8s-scale-001:
+    prompt: איך עובד ה-Horizontal Pod Autoscaler (HPA)? מה הוא צריך כדי לעבוד?
+    keyPoints:
+      - "בכל כמה שניות הוא משווה מטריקה (למשל ממוצע ניצול CPU) ליעד, ומשנה את מספר העותקים של Deployment או StatefulSet"
+      - "צריך metrics-server (או מטריקות מותאמות דרך adapter כמו Prometheus Adapter או KEDA)"
+      - "ניצול CPU נמדד ביחס ל-REQUESTS של ה-pods, ולכן חייבים להגדיר requests"
+      - "שומר על מינימום ומקסימום, ויש לו חלון ייצוב כדי לא לקפוץ הלוך ושוב"
+      - "שונה מ-Cluster Autoscaler (מוסיף nodes) ומ-VPA (משנה requests)"
+    modelAnswer: |
+      ה-HPA הוא לולאת בקרה. בערך כל 15 שניות הוא קורא מטריקה של ה-pods של Deployment, בדרך כלל ממוצע ניצול CPU, משווה ליעד (נניח 70%), ומשנה את מספר העותקים בהתאם, בין המינימום למקסימום.
+      ל-CPU ולזיכרון הוא צריך **metrics-server**. למטריקות אחרות, כמו בקשות לשנייה או אורך תור, צריך adapter של מטריקות או KEDA.
+      ניצול CPU נמדד כאחוז מה-**request** של ה-pod, ולכן בלי requests ה-HPA לא עובד.
+      יש לו חלון ייצוב בירידה, כדי לא לקפוץ הלוך ושוב.
+      שימו לב: הוא רק מוסיף pods. אם אין להם מקום, Cluster Autoscaler או Karpenter מוסיפים nodes.
+    explanation: "ב-MyBroker, Terraform מתקין metrics-server, וה-Helm chart כולל תבנית HPA, כך ש-`kubectl get hpa` מראה את הניצול הנוכחי ואת היעד."
+
+  k8s-scale-002:
+    prompt: שנו בפקודה את מספר העותקים של ה-Deployment בשם `api` ל-5.
+    explanation: "תחת GitOps (Argo CD עם self-heal), שינוי ידני יחזור למה שכתוב ב-Git. משנים את הקובץ, או נותנים ל-HPA לנהל את מספר העותקים."
+
+  k8s-stor-001:
+    prompt: תסבירו מה זה PersistentVolume, PersistentVolumeClaim ו-StorageClass, ואיך עובדת יצירה דינמית של אחסון.
+    keyPoints:
+      - "PV: יחידת אחסון אמיתית ב-cluster (דיסק EBS, תיקיית NFS ועוד)"
+      - "PVC: בקשה של pod לאחסון (גודל, סוג גישה); מתחברת ל-PV"
+      - "StorageClass: מתאר סוג של אחסון ומי יוצר אותו (למשל gp3 דרך ה-EBS CSI driver)"
+      - "יצירה דינמית: כשיוצרים PVC עם StorageClass, ה-CSI driver יוצר את הדיסק ואת ה-PV אוטומטית"
+      - "סוגי גישה (RWO, RWX) ומדיניות שחרור (Delete, Retain)"
+    modelAnswer: |
+      **PersistentVolume** הוא האחסון עצמו: דיסק EBS, תיקיית NFS, דיסק מקומי.
+      **PersistentVolumeClaim** היא הבקשה של האפליקציה: "אני צריך 20Gi, ReadWriteOnce". ה-pod מחבר את הבקשה, לא את הדיסק, כך שלאפליקציה לא משנה מה יש מאחור.
+      **StorageClass** מתאר סוג של אחסון ומי יוצר אותו, למשל `gp3` דרך ה-AWS EBS CSI driver.
+      ביצירה דינמית יוצרים רק PVC שמציין StorageClass, וה-CSI driver יוצר את הדיסק ו-PV מתאים, ומחבר ביניהם.
+      מדיניות השחרור (reclaim policy) קובעת אם הדיסק נמחק או נשמר כשמוחקים את הבקשה. למידע חשוב משתמשים ב-Retain.
+    explanation: "ReadWriteOnce = node אחד מחבר לקריאה וכתיבה (אחסון בלוקים כמו EBS). ReadWriteMany צריך מערכת קבצים משותפת (EFS, NFS). PVC שתקוע ב-Pending אומר בדרך כלל שאין StorageClass מתאים או מי שייצור את הדיסק."
+
+  k8s-stor-002:
+    prompt: מה זה volume מסוג `emptyDir`?
+    options:
+      - "מקום זמני שנוצר כש-pod מתחיל ונמחק כשה-pod נמחק; משותף לכל הקונטיינרים ב-pod"
+      - "דיסק קבוע ששורד מחיקה של ה-pod"
+      - "volume שמצביע לתיקייה ב-node"
+      - "volume שתמיד ריק"
+    explanation: "emptyDir חי בדיוק כמו ה-pod. הוא שורד הפעלה מחדש של קונטיינר, אבל לא מחיקה של ה-pod או מעבר ל-node אחר. טוב ל-cache ולשיתוף קבצים בין sidecar לאפליקציה."
+
+  k8s-rbac-001:
+    prompt: איך עובד RBAC ב-Kubernetes? תסבירו Role, ClusterRole, RoleBinding ו-ServiceAccount.
+    keyPoints:
+      - "Role: רשימת פעולות מותרות על משאבים בתוך namespace; ClusterRole: הרשאות לכל ה-cluster (או תבנית לשימוש חוזר)"
+      - "RoleBinding ו-ClusterRoleBinding מצמידים role לנושאים (משתמשים, קבוצות, ServiceAccounts)"
+      - "ServiceAccount: הזהות של pods ו-workloads שפונים ל-API"
+      - "הרשאות רק מצטברות ורק מרשות (אין חסימה); עובדים לפי הרשאות מינימליות"
+    modelAnswer: |
+      RBAC רק מרשה ורק מצטבר. אין חוקי "אסור".
+      - **Role** מפרט מה מותר בתוך namespace אחד, למשל `get`, `list` ו-`watch` על `pods`.
+      - **ClusterRole** זה אותו דבר, אבל לכל ה-cluster: ל-nodes, לכל ה-namespaces, או כתבנית לשימוש חוזר.
+      - **RoleBinding** נותן Role (או ClusterRole, רק בתוך ה-namespace הזה) לנושאים: משתמשים, קבוצות או **ServiceAccounts**.
+      - **ClusterRoleBinding** נותן אותו לכל ה-cluster.
+      ServiceAccount הוא הזהות ש-pods משתמשים בה כשהם פונים ל-API, למשל תהליך פריסה של CI או operator.
+      הרשאות מינימליות = Role ב-namespace עם בדיוק הפעולות שצריך, לא cluster-admin. בודקים עם `kubectl auth can-i list pods --as=system:serviceaccount:ns:sa`.
+    explanation: "בענן אפשר לקשר ServiceAccount ל-IAM role (ב-EKS: IRSA או Pod Identity), כך ש-pods מקבלים הרשאות AWS בלי מפתחות קבועים."
+
+  k8s-rbac-002:
+    prompt: מה זה NetworkPolicy, ומה ההתנהגות של הרשת כשאין אף אחת?
+    keyPoints:
+      - "כברירת מחדל כל pod יכול לדבר עם כל pod (רשת שטוחה, הכול מותר)"
+      - "NetworkPolicy מגבילה תעבורה נכנסת ויוצאת של pods נבחרים, לפי labels של pods או namespaces, טווחי IP ופורטים"
+      - "ברגע ש-pod נבחר על ידי policy, כל מה שלא הותר במפורש נחסם (לאותו כיוון)"
+      - "צריך CNI שאוכף אותן (Calico, Cilium ועוד); אחרת מתעלמים מהן"
+    modelAnswer: |
+      כברירת מחדל, הרשת ב-Kubernetes שטוחה והכול מותר: כל pod יכול להגיע לכל pod, בכל namespace.
+      NetworkPolicy בוחרת pods לפי label, וקובעת איזו תעבורה מותר להם לקבל (ingress) ולשלוח (egress), לפי labels של pods או namespaces, טווחי IP ופורטים.
+      ברגע ש-pod נבחר על ידי policy לכיוון מסוים, כל מה שלא הותר נחסם. לכן דפוס נפוץ הוא policy של "חסום הכול" בכל namespace, ועליה היתרים מפורשים: "רק ה-ingress controller מגיע ל-frontend", "רק ה-API מגיע למסד הנתונים בפורט 5432".
+      לא לשכוח להרשות תעבורה יוצאת ל-DNS (CoreDNS).
+      וה-CNI plugin חייב לאכוף policies, אחרת מתעלמים מהן בשקט.
+    explanation: "ב-MyBroker הוספתי NetworkPolicies ב-Helm chart. ה-CNI הרגיל של kind (kindnet) אוכף אותן בגרסאות חדשות, אבל נתקלתי במצב ישן של policies אחרי הפעלה מחדש של nodes."
+
+  k8s-sched-001:
+    prompt: תסבירו taints ו-tolerations מול node affinity. תנו דוגמת שימוש לכל אחד.
+    keyPoints:
+      - "taints נמצאים על nodes ו**דוחים** pods שאין להם toleration מתאים (NoSchedule, PreferNoSchedule, NoExecute)"
+      - "tolerations על pods **מרשים** (לא מכריחים) שיבוץ על nodes עם taint"
+      - "node affinity על pods **מושך** אותם ל-nodes עם labels מסוימים (חובה או העדפה)"
+      - "שימושים: nodes ייעודיים עם GPU (taint + toleration + affinity יחד), nodes של ה-control plane מסומנים ב-taint, פיזור בין אזורים"
+    modelAnswer: |
+      הם עובדים מכיוונים הפוכים.
+      **taint** שמים על node, והוא מרחיק pods, אלא אם יש להם **toleration** מתאים. nodes של ה-control plane מסומנים ב-taint כדי ש-workloads רגילים לא ינחתו שם, ו-nodes עם GPU מסומנים כדי שרק משימות GPU ישתמשו בהם.
+      toleration רק **מרשה** ל-pod לרוץ על ה-node. הוא לא מכריח אותו לשם.
+      **node affinity** נמצא על ה-pod, ומושך אותו ל-nodes עם labels מסוימים: חובה ("חייב לרוץ על nodes עם disktype=ssd") או העדפה.
+      ל-nodes שבאמת ייעודיים משלבים את שניהם: taint על ה-nodes עם GPU, ול-pods של GPU גם toleration וגם node affinity.
+      pod anti-affinity או topology spread constraints מפזרים עותקים בין nodes ואזורים.
+    explanation: "`kubectl describe node` מציג taints. taint מסוג NoExecute גם מפנה pods שכבר רצים."
+
+  k8s-dep-001:
+    prompt: החזירו את ה-Deployment בשם `api` לגרסה הקודמת שלו.
+    explanation: "`kubectl rollout history deployment/api` מציג את הגרסאות, `--to-revision=N` בוחר גרסה מסוימת, ו-`rollout status` עוקב אחרי ההתקדמות. עם GitOps עושים revert ל-commit במקום זה."
+
+  k8s-dep-002:
+    prompt: איך עובד rolling update של Deployment, ומה `maxSurge` ו-`maxUnavailable` קובעים?
+    keyPoints:
+      - "נוצר ReplicaSet חדש, שגדל בהדרגה בזמן שהישן קטן"
+      - "maxSurge: כמה pods מעל המספר הרצוי מותרים בזמן העדכון"
+      - "maxUnavailable: כמה pods מתחת למספר הרצוי מותרים"
+      - "pods חדשים חייבים לעבור readiness לפני שהישנים יורדים, כך שגרסה שבורה עוצרת את העדכון ולא מפילה את השירות"
+    modelAnswer: |
+      כשתבנית ה-pod משתנה, למשל תגית image חדשה, ה-Deployment יוצר ReplicaSet חדש ומעביר אליו pods צעד אחר צעד: מגדיל את החדש, מחכה שה-pods החדשים יהיו Ready, מקטין את הישן, וחוזר חלילה.
+      - **maxSurge**: כמה pods מעל מספר העותקים הרצוי מותרים בזמן העדכון. יותר = מהיר יותר, אבל צריך עוד משאבים.
+      - **maxUnavailable**: כמה pods מותר שיחסרו.
+      עם maxUnavailable 0 ו-maxSurge 1, אף פעם לא יורדים מתחת לקיבולת מלאה.
+      מכיוון שהוא מחכה ל-readiness, image שבור רק עוצר את העדכון, וה-pods הישנים ממשיכים לשרת. אפשר להריץ `rollout undo`.
+      ה-ReplicaSet הישן נשמר, עם 0 עותקים, בשביל חזרה לאחור.
+    explanation: "השיטה האחרת, `Recreate`, הורגת קודם את כל ה-pods הישנים. זו השבתה, אבל לפעמים צריך אותה כששתי גרסאות לא יכולות לרוץ יחד."
+
+  k8s-dep-003:
+    prompt: ממה מגן PodDisruptionBudget?
+    options:
+      - "מהפרעות מתוכננות, כמו פינוי node בזמן שדרוג, שמפנות יותר מדי עותקים בבת אחת"
+      - "מ-pods שקורסים בגלל באגים באפליקציה"
+      - "מ-nodes שנגמר להם הזיכרון"
+      - "מגישה לא מורשית ל-API"
+    explanation: "PDB, למשל `minAvailable: 2`, גורם ל-`kubectl drain` ולשדרוגים של ה-cluster לפנות pods בהדרגה. הוא לא עוזר בתקלות לא מתוכננות, כמו node שנופל."
+
+  k8s-dep-004:
+    prompt: הפעילו מחדש את כל ה-pods של ה-Deployment בשם `api` בהדרגה (rolling restart), בלי לשנות את ה-image.
+    explanation: "הוא מחליף את ה-pods אחד אחרי השני, כמו עדכון רגיל, כך שאין השבתה. שימושי אחרי שינוי ב-Secret או ב-ConfigMap שמשמשים כמשתני סביבה. מחיקה של כל ה-pods בבת אחת גורמת להשבתה."
+
+  k8s-ts-001:
+    prompt: pod נמצא ב-`CrashLoopBackOff`. איך מוצאים את הבעיה?
+    keyPoints:
+      - "זה אומר שהקונטיינר עולה וקורס שוב ושוב; Kubernetes מחכה יותר ויותר בין ההפעלות"
+      - "kubectl logs <pod> --previous כדי לראות את הפלט של הקונטיינר שקרס"
+      - "kubectl describe pod: המצב האחרון, קוד היציאה, הסיבה (OOMKilled, Error), ה-events, וכישלונות probe"
+      - "סיבות נפוצות: שגיאה באפליקציה, הגדרה שגויה או משתנה/secret חסר, liveness probe שנכשל, OOMKilled, פקודה או entrypoint שגויים, שירות שהוא תלוי בו חסר"
+      - "לשחזר ולחקור: להריץ את ה-image מקומית, kubectl debug או exec, לבדוק מה השתנה לאחרונה"
+    modelAnswer: |
+      CrashLoopBackOff אומר שהקונטיינר עולה, נסגר, ו-Kubernetes מפעיל אותו שוב ושוב, עם המתנה שהולכת וגדלה.
+      1. `kubectl logs <pod> --previous`: הלוגים של המופע שקרס. בדרך כלל האפליקציה אומרת מה הבעיה: משתנה סביבה או Secret חסר, הגדרה שגויה, מסד נתונים שאי אפשר להגיע אליו.
+      2. `kubectl describe pod`: המצב האחרון מראה את קוד היציאה והסיבה. OOMKilled עם 137 = להגדיל את מגבלת הזיכרון או לתקן דליפה. 1 = שגיאה באפליקציה. ב-events רואים liveness probe שהורג אותו שוב ושוב.
+      סיבות נוספות: פקודה או ארגומנטים שגויים, או תהליך ראשי שמסתיים מיד.
+      שואלים גם מה השתנה: image חדש? שינוי בהגדרות?
+      כדי להעמיק, מריצים את ה-image מקומית, או משתמשים ב-`kubectl debug` עם shell.
+    explanation: "קוד יציאה 0 ב-CrashLoopBackOff אומר שהתהליך הסתיים בצורה רגילה. הפקודה שלו היא לא שרת שרץ כל הזמן."
+    followUps: ["במה זה שונה מ-ImagePullBackOff?"]
+
+  k8s-ts-002:
+    prompt: pod מראה `ImagePullBackOff`. מה הסיבות הסבירות? (סמנו את כל הנכונות.)
+    options:
+      - "שם image או תגית שגויים"
+      - "registry פרטי בלי imagePullSecrets (או עם שגויים)"
+      - "ה-node לא מגיע ל-registry (רשת, DNS, הגבלת קצב)"
+      - "האפליקציה זורקת exception בזמן העלייה"
+    explanation: "ה-image לא נמשך, ולכן האפליקציה אף פעם לא עלתה. ה-events ב-`kubectl describe pod` מראים את השגיאה המדויקת מה-registry (לא נמצא, אין הרשאה, timeout). exception באפליקציה היה נותן CrashLoopBackOff."
+
+  k8s-ts-003:
+    prompt: משתמש אומר "האתר למטה". הוא רץ ב-Kubernetes מאחורי Ingress. סדרו בדיקה הגיונית מבחוץ פנימה.
+    steps:
+      - "לשחזר: curl -v לכתובת, כדי לראות את השגיאה האמיתית (DNS, TLS, 404, 502, 503)"
+      - "לבדוק את ה-Ingress ואת ה-ingress controller (kubectl describe ingress, הלוגים של ה-controller)"
+      - "לבדוק את ה-Service ואת ה-endpoints שלו (kubectl get endpoints)"
+      - "לבדוק את ה-pods: סטטוס, הפעלות מחדש, readiness (kubectl get pods, describe)"
+      - "לבדוק את הלוגים של ה-pods, ופריסות או שינויי הגדרות אחרונים"
+    explanation: הולכים בדרך של הבקשה, מבחוץ פנימה. השגיאה בכל תחנה אומרת איפה לחפש הלאה.
+
+  k8s-ts-004:
+    prompt: '`kubectl get pods` מראה pod במצב `Running` עם RESTARTS = 14, ו-`kubectl describe` אומר `Last State: Terminated, Reason: OOMKilled`. מה עושים?'
+    options:
+      - "בודקים את השימוש בזיכרון בפועל (kubectl top או מטריקות) מול המגבלה; מגדילים אותה אם היא באמת נמוכה מדי, או מתקנים דליפה אם השימוש רק עולה"
+      - "מגדילים את מגבלת ה-CPU"
+      - "מוחקים את ה-pod כדי שיתחיל מחדש"
+      - "מורידים את ה-readiness probe"
+    explanation: |
+      מחיקת ה-pod רק מאפסת את המונה. משווים את דפוס השימוש למגבלה:
+      - עלייה קבועה עד שהוא נהרג = דליפת זיכרון.
+      - קו ישר קצת מעל המגבלה = המגבלה נמוכה מדי.
+      בודקים גם הגדרות של סביבת הריצה, למשל גודל ה-heap של JVM, שחייב להיכנס בתוך המגבלה של הקונטיינר.
+
+  k8s-ts-005:
+    prompt: הציגו את הלוגים של המופע **הקודם** (שקרס) של הקונטיינר ב-pod בשם `api-7d9f`.
+    explanation: "בלי `--previous` רואים את הקונטיינר הנוכחי, שהרגע הופעל מחדש ובדרך כלל עוד אין לו פלט שימושי. `-c` בוחר קונטיינר ב-pod עם כמה קונטיינרים."
+
+  k8s-ts-006:
+    prompt: pod תקוע ב-`Pending`. מה יכולות להיות הסיבות, ואיך מגלים?
+    keyPoints:
+      - "kubectl describe pod וקוראים את ה-Events (הודעות של ה-scheduler)"
+      - "אין מספיק CPU או זיכרון בשום node בשביל ה-requests"
+      - "taints בלי tolerations, או nodeSelector או affinity שאף node לא מתאים להם"
+      - "PVC שלא חובר (אין StorageClass או מי שייצור את הדיסק, אזור לא תואם)"
+      - "מגבלות quota, או יותר מדי pods ל-node; אולי ה-cluster autoscaler כבר מוסיף node"
+    modelAnswer: |
+      Pending אומר שה-scheduler עוד לא שיבץ את ה-pod. `kubectl describe pod` אומר למה, ב-Events. למשל: "0/3 nodes are available: 2 Insufficient cpu, 1 node(s) had untolerated taint".
+      הסיבות הרגילות:
+      - ה-requests גדולים מהמקום הפנוי בכל node.
+      - nodeSelector או affinity שאף node לא מתאים להם, או taints שאין ל-pod toleration עבורם.
+      - PersistentVolumeClaim שלא חובר: StorageClass חסר, או דיסק באזור (availability zone) אחר.
+      - ResourceQuota של ה-namespace.
+      לפי הסיבה: מורידים את ה-requests, מוסיפים nodes (או בודקים למה ה-cluster autoscaler לא מוסיף), מתקנים labels או tolerations, או מתקנים את האחסון.
+    explanation: "Pending = בעיית שיבוץ. ContainerCreating = ה-pod שובץ, אבל תקוע במשיכת image, ב-volumes או ברשת. CrashLoopBackOff = הבעיה באפליקציה עצמה."
+
+  k8s-kubectl-001:
+    prompt: הציגו את כל ה-pods בכל ה-namespaces, כולל באיזה node כל אחד רץ.
+    explanation: "`-A` = כל ה-namespaces, ו-`-o wide` מוסיף את ה-node ואת ה-IP. עוד שימושיים: `-l app=api` (סינון לפי label), `--field-selector status.phase!=Running`, ו-`-w` (מעקב בזמן אמת)."
+
+  k8s-kubectl-002:
+    prompt: הפנו את פורט 8080 המקומי לפורט 80 של ה-Service בשם `web` (לבדיקה מהירה, בלי Ingress).
+    explanation: "זה עובד עם pods, deployments או services. המנהרה עוברת דרך ה-API server, ולכן היא רק לבדיקות, לא לתעבורה אמיתית."
+
+  k8s-kubectl-003:
+    prompt: מה ההבדל בין `kubectl apply` ל-`kubectl create`?
+    options:
+      - "apply הוא הצהרתי: יוצר את האובייקט או מעדכן אותו כך שיתאים לקובץ; create הוא פקודה חד-פעמית, ונכשל אם האובייקט כבר קיים"
+      - "הם זהים"
+      - "create חדש יותר ומחליף את apply"
+      - "apply עובד רק עם Deployments"
+    explanation: "`apply` הוא מה שמשתמשים בו עם קבצים ב-Git (וזה מה שכלי GitOps עושים). `kubectl diff -f` מראה מה apply ישנה."
+
+  k8s-kubectl-004:
+    prompt: הציגו את כל הפרטים ואת ה-events האחרונים של ה-pod בשם `api-7d9f`.
+    explanation: "`describe` מראה את הסטטוס של כל קונטיינר, המצב האחרון וקוד היציאה, ה-probes, ה-volumes, ובסוף את ה-**Events**, שבדרך כלל מסבירים Pending, ImagePullBackOff או כישלון של probe."
+
+  k8s-kubectl-005:
+    prompt: הציגו את ה-pods ב-namespace בשם `prod`.
+    explanation: "בלי `-n`, kubectl משתמש ב-namespace של ה-context הנוכחי (בדרך כלל `default`). `kubectl config set-context --current --namespace=prod` משנה את ברירת המחדל."
+
+  k8s-kubectl-006:
+    prompt: פתחו shell אינטראקטיבי בתוך ה-pod בשם `api-7d9f`.
+    explanation: "כל מה שאחרי `--` הוא הפקודה שתרוץ בקונטיינר. `-c` בוחר קונטיינר ב-pod עם כמה קונטיינרים. אם אין shell ב-image, משתמשים ב-`kubectl debug`."
+
+  k8s-kubectl-007:
+    prompt: צרו או עדכנו את המשאבים שמתוארים בקובץ `deployment.yaml`.
+    explanation: "`-f` מקבל גם תיקייה (`-f k8s/`) או כתובת URL. כדאי להריץ קודם `kubectl diff -f deployment.yaml` כדי לראות מה ישתנה."
+
+  k8s-kubectl-008:
+    prompt: הציגו את ה-Deployments ב-namespace הנוכחי.
+    explanation: "העמודה READY (למשל `2/3`) מראה כמה עותקים מוכנים מתוך כמה שרוצים. UP-TO-DATE מראה כמה כבר מריצים את הגרסה האחרונה."
+
+  k8s-kubectl-009:
+    prompt: הציגו את ה-events ב-namespace הנוכחי, ממוינים לפי זמן, כך שהחדשים בסוף.
+    explanation: "events מראים כישלונות שיבוץ, משיכת images, כישלונות probe והריגות OOM. הם נשמרים רק כשעה. הפקודה החדשה `kubectl events` ממיינת לפי זמן לבד."

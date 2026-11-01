@@ -1,0 +1,407 @@
+topic: sre
+questions:
+  - id: sre-avail-001
+    type: open
+    subtopic: availability
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between horizontal and vertical scaling? Which is preferred for web apps, and what does it require?
+    rubric:
+      keyPoints:
+        - { text: "Vertical: bigger machine (more CPU/RAM); simple but has limits and usually downtime, single point of failure", weight: 3 }
+        - { text: "Horizontal: more instances behind a load balancer; scales further and adds redundancy", weight: 3 }
+        - { text: "Horizontal requires stateless app servers (sessions/state in shared stores: DB, Redis, S3)", weight: 3 }
+        - { text: "Databases are harder to scale horizontally (replicas, sharding)", weight: 1 }
+    modelAnswer: |
+      Vertical scaling means a bigger machine: more CPU and memory. It's simple, but there's a ceiling, it often needs a restart, and you still have a single point of failure. Horizontal scaling means more instances behind a load balancer. It scales much further, can be automated (ASG, HPA), and gives redundancy, since losing one instance isn't an outage. It's the preferred approach for web apps, but it requires the app servers to be stateless: user sessions, uploads and caches must live in shared services like the database, Redis or S3, not on the local instance, so any instance can serve any request. Databases are harder: you add read replicas, caching, and eventually sharding.
+    explanation: The twelve-factor app principles describe what makes an app easy to scale horizontally.
+
+  - id: sre-avail-002
+    type: mcq
+    subtopic: availability
+    level: 2
+    prompt: What's the difference between high availability and fault tolerance?
+    options:
+      - "HA minimizes downtime with redundancy and fast failover (brief interruption possible); fault tolerance continues with zero interruption when a component fails"
+      - "They're the same"
+      - "Fault tolerance is cheaper"
+      - "HA means backups"
+    correct: [0]
+    explanation: "RDS Multi-AZ is HA (a failover takes a minute or two). True fault tolerance, like active-active with no interruption, costs more. Both differ from disaster recovery, which is restoring after a large-scale failure."
+
+  - id: sre-db-001
+    type: open
+    subtopic: databases
+    level: 2
+    prompt: What is caching, where can you cache in a web architecture, and what's the hard part?
+    rubric:
+      keyPoints:
+        - { text: "Caching stores frequently used data closer/faster to avoid recomputation or slow backends", weight: 2 }
+        - { text: "Layers: browser/HTTP cache headers, CDN at the edge, reverse proxy, application cache (Redis/Memcached), DB query cache", weight: 3 }
+        - { text: "Hard part: invalidation/staleness (TTL, cache-aside updates), consistency", weight: 3 }
+        - { text: "Also: cache stampede/thundering herd, memory limits/eviction (LRU)", weight: 2 }
+    modelAnswer: |
+      Caching keeps the result of expensive work, like a DB query, an API call or a rendered page, somewhere faster, so the next request doesn't pay the full cost. You can cache at every layer: the browser via HTTP cache headers, a CDN like CloudFront at the edge for static assets and even API responses, a reverse proxy, an application cache like Redis or Memcached using the cache-aside pattern, and inside the database. The hard part is invalidation: when the source data changes, cached copies become stale, so you pick TTLs per kind of data and explicitly delete or update keys on writes. Other pitfalls: a cache stampede, when a hot key expires and thousands of requests hit the DB at once, and memory pressure with eviction policies like LRU.
+    explanation: '"There are only two hard things in computer science: cache invalidation and naming things."'
+
+  - id: sre-db-002
+    type: mcq
+    subtopic: databases
+    level: 2
+    prompt: Why would you put a message queue (SQS, RabbitMQ, Kafka) between a web API and a slow processing service?
+    options:
+      - "To decouple them: the API responds fast, work is buffered during spikes, consumers scale independently and retries are possible"
+      - "To make requests synchronous"
+      - "To store passwords"
+      - "To replace the database"
+    correct: [0]
+    explanation: "Queues absorb bursts and isolate failures. Watch the queue depth (a good autoscaling signal), and handle duplicates, since most queues are at-least-once, by making consumers idempotent."
+
+  - id: sre-db-003
+    type: mcq
+    subtopic: databases
+    level: 1
+    prompt: When would you choose a NoSQL database like DynamoDB or MongoDB over a relational database like PostgreSQL?
+    options:
+      - "Flexible/evolving schemas or simple key-based access at massive scale; relational is better for complex queries, joins and strong consistency across tables"
+      - "Always; NoSQL is newer"
+      - "Never; relational databases do everything better"
+      - "Only for storing images"
+    correct: [0]
+    explanation: Default to a relational DB unless you have a reason. DynamoDB shines with known, key-based access patterns at huge scale, but ad-hoc queries are hard.
+
+  - id: sre-inc-001
+    type: open
+    subtopic: incidents
+    level: 2
+    tags: [il-common]
+    prompt: What is a blameless postmortem, and what should it contain?
+    rubric:
+      keyPoints:
+        - { text: "A written review after an incident focused on systems and process, not blaming individuals, so people share honestly", weight: 3 }
+        - { text: "Contains: summary and impact (users, duration), timeline, root cause(s) and contributing factors", weight: 3 }
+        - { text: "What went well/badly in detection and response", weight: 1 }
+        - { text: "Action items with owners and deadlines to prevent recurrence/improve detection", weight: 3 }
+    modelAnswer: |
+      A blameless postmortem is a written review after an incident that assumes people acted reasonably with the information they had, and asks what in the system or process allowed the failure. Blame makes people hide mistakes, and then you can't fix the real causes. It contains a summary and the customer impact (who was affected, for how long), a timeline from the first signal through detection, mitigation and resolution, the root cause and contributing factors (often asking "why" several times), what went well and badly in detection and response, and, most importantly, concrete action items with owners and due dates, such as adding an alert, a test, a guardrail or automating a manual step. Then you actually follow up on them.
+    explanation: "Useful metrics: MTTD (time to detect) and MTTR (time to recover)."
+
+  - id: sre-inc-002
+    type: order
+    subtopic: incidents
+    level: 2
+    prompt: Order the phases of handling a production incident.
+    steps:
+      - "Detect (alert or user report) and acknowledge"
+      - "Assess severity and communicate (incident channel, status page)"
+      - "Mitigate: restore service (rollback, failover, scale)"
+      - "Resolve the underlying cause"
+      - "Postmortem with action items"
+    explanation: Mitigation before root cause. Keep stakeholders informed throughout, with a designated incident commander for bigger incidents.
+
+  - id: sre-design-001
+    type: open
+    subtopic: design
+    level: 2
+    tags: [il-common]
+    prompt: Design a highly available, scalable deployment for a simple web app with a database on AWS. Describe the components.
+    rubric:
+      keyPoints:
+        - { text: "VPC across at least 2-3 AZs with public and private subnets", weight: 2 }
+        - { text: "Load balancer (ALB) in public subnets; app tier in private subnets with auto scaling (ASG/ECS/EKS) across AZs", weight: 3 }
+        - { text: "Managed DB (RDS/Aurora) Multi-AZ in private subnets, backups, maybe read replicas; cache (ElastiCache)", weight: 3 }
+        - { text: "Static assets on S3 + CloudFront; Route 53 DNS; TLS via ACM", weight: 1 }
+        - { text: "Security groups by tier, monitoring/alarms (CloudWatch), IaC (Terraform), CI/CD", weight: 2 }
+    modelAnswer: |
+      A VPC across three Availability Zones, each with a public and a private subnet. Route 53 points the domain at an Application Load Balancer in the public subnets, with a TLS certificate from ACM. The app runs in the private subnets as stateless instances, in an Auto Scaling group or as ECS/EKS services spread across the AZs, scaling on CPU or request count and registered with the ALB, which health-checks them. The database is RDS (or Aurora) Multi-AZ in private subnets with automated backups, plus a read replica if reads are heavy, and ElastiCache Redis for sessions and caching. Static assets go to S3 behind CloudFront. Security groups chain the tiers: the ALB from the internet on 443, the app only from the ALB, the DB only from the app. NAT gateways give the private subnets outbound access. Everything is defined in Terraform, deployed by CI/CD, and monitored with CloudWatch alarms or Prometheus. Losing any one instance or a whole AZ doesn't take the site down.
+    explanation: Draw it while you talk (boxes per AZ), and mention trade-offs such as cost (NAT per AZ) and multi-region for DR.
+
+  - id: sre-dr-001
+    type: mcq
+    subtopic: dr
+    level: 2
+    prompt: What do RPO and RTO mean in disaster recovery?
+    options:
+      - "RPO = how much data loss is acceptable (time since the last good copy); RTO = how long until the service is restored"
+      - "RPO = recovery point owner; RTO = recovery team owner"
+      - "Both measure uptime"
+      - "RTO is data loss, RPO is downtime"
+    correct: [0]
+    explanation: "An RPO of 5 minutes needs continuous replication or point-in-time recovery. A 4-hour RTO might allow restore-from-backup into a fresh environment. Tighter targets cost more (backup/restore → pilot light → warm standby → active-active)."
+
+  - id: sre-dr-002
+    type: open
+    subtopic: dr
+    level: 1
+    prompt: '"We have backups." What questions would you ask to know whether that''s actually true?'
+    rubric:
+      keyPoints:
+        - { text: "Have restores been tested recently (a backup you haven't restored is a hope, not a backup)?", weight: 3 }
+        - { text: "What's covered (DBs, volumes, config, secrets) and how often (meets RPO)?", weight: 2 }
+        - { text: "Where are they stored: separate account/region, immutable/protected against deletion and ransomware?", weight: 3 }
+        - { text: "How long does a restore take (meets RTO), is it documented/automated, are backups monitored for failures?", weight: 2 }
+    modelAnswer: |
+      The first question is: when did we last successfully *restore* from them? An untested backup is a hope, not a backup. Then: what exactly is backed up? Databases, volumes, but also config, secrets and infrastructure code. How often, and does that meet our RPO? Where are they stored? Ideally in a separate account and region, encrypted, and immutable (S3 Object Lock, AWS Backup Vault Lock), so one compromised admin or ransomware can't delete them along with production. How long does a full restore take, and does that meet the RTO? Is the restore procedure documented or automated? And do we get alerted when a backup job fails?
+    explanation: '"3-2-1": 3 copies, on 2 different media, 1 offsite. Infrastructure as code plus GitOps makes rebuilding the stateless parts fast; the data is what needs backups.'
+
+  - id: sre-avail-003
+    type: mcq
+    subtopic: availability
+    level: 1
+    prompt: What is a "single point of failure"?
+    options:
+      - "A component that, if it fails, takes the whole system down because nothing else can take over"
+      - "The first error in a log file"
+      - "A server with only one CPU"
+      - "A failed deployment"
+    correct: [0]
+    explanation: "One database server, one load balancer, one NAT gateway, one region. You remove SPOFs with redundancy: more replicas, multiple AZs, failover."
+
+  - id: sre-avail-004
+    type: mcq
+    subtopic: availability
+    level: 1
+    prompt: Why must a web app be stateless to scale horizontally?
+    options:
+      - "Any instance may get any request, so sessions and files must live in shared storage, not on one server"
+      - "Stateless apps use less CPU"
+      - "Load balancers can't connect to stateful apps"
+      - "It's required by Kubernetes"
+    correct: [0]
+    explanation: "If a session lives in one server's memory, the next request may land on another server and the user is logged out. Put sessions in Redis or a DB and files in S3."
+
+  - id: sre-avail-005
+    type: open
+    subtopic: availability
+    level: 2
+    prompt: What is graceful degradation? Give an example.
+    rubric:
+      keyPoints:
+        - { text: "When a dependency fails, the system keeps its core working with reduced features instead of failing completely", weight: 3 }
+        - { text: "Example: show cached or default data, hide a non-critical widget, queue writes for later", weight: 3 }
+        - { text: "Supported by timeouts, fallbacks, circuit breakers", weight: 2 }
+    modelAnswer: |
+      Graceful degradation means that when a part of the system fails, the main thing keeps working, just with less. For example, if the recommendations service is down, an online shop still shows products and lets people pay, it just hides the "you may also like" box. In my MyBroker project, if the price provider is down, the app keeps working with the last cached prices and a warning. You get there with timeouts on every external call, fallbacks like cached or default data, and circuit breakers that stop calling a service that keeps failing.
+    explanation: The opposite is a cascading failure, where one slow dependency makes every request hang and the whole site falls over.
+
+  - id: sre-db-004
+    type: mcq
+    subtopic: databases
+    level: 1
+    prompt: What does a database index do?
+    options:
+      - "Lets the database find rows by a column without scanning the whole table, at the cost of slower writes and more storage"
+      - "Backs up the table"
+      - "Encrypts a column"
+      - "Splits the database across servers"
+    correct: [0]
+    explanation: "A missing index on a filtered column is one of the most common causes of slow queries and high disk I/O."
+
+  - id: sre-db-005
+    type: open
+    subtopic: databases
+    level: 2
+    prompt: The app is slow and you suspect the database. What would you check?
+    rubric:
+      keyPoints:
+        - { text: "Slow queries: the slow query log / pg_stat_statements, and EXPLAIN for missing indexes or full scans", weight: 3 }
+        - { text: "Resource use on the DB: CPU, memory, disk I/O, connections", weight: 2 }
+        - { text: "Connection count / pool exhaustion and locks", weight: 2 }
+        - { text: "Fixes: add indexes, cache hot reads, read replicas, connection pooling, fix N+1 queries", weight: 2 }
+    modelAnswer: |
+      First I'd confirm it's really the database: do the app's traces or logs show long query times? Then on the database side I look for the slowest queries, with the slow query log or `pg_stat_statements` in PostgreSQL, and run `EXPLAIN` on them to spot full table scans and missing indexes. I check the DB's CPU, memory, disk I/O and the number of connections, because running out of connections or waiting on locks also looks like "slow". Typical fixes: add the missing index, cache hot reads in Redis, send reads to a replica, use connection pooling, and fix N+1 query patterns in the code.
+    explanation: "N+1 means one query for a list, then one more query per item. 1 + 100 queries instead of 2."
+
+  - id: sre-inc-003
+    type: mcq
+    subtopic: incidents
+    level: 1
+    prompt: During a major incident, what is the incident commander's job?
+    options:
+      - "Coordinate: decide priorities, assign tasks, keep communication flowing; not necessarily fix things personally"
+      - "Write all the code fixes"
+      - "Find who caused the incident"
+      - "Restart every server"
+    correct: [0]
+    explanation: "Separating coordination from hands-on debugging keeps big incidents from becoming chaos. Someone else usually handles status updates."
+
+  - id: sre-inc-004
+    type: mcq
+    subtopic: incidents
+    level: 1
+    prompt: What is a runbook?
+    options:
+      - "A written, step-by-step guide for handling a known alert or operational task"
+      - "A list of running processes"
+      - "A CI pipeline file"
+      - "A log of past deployments"
+    correct: [0]
+    explanation: "Each alert should link to a runbook: what it means, how to check, how to fix or escalate. It lets anyone on call act quickly, not just the expert."
+
+  - id: sre-inc-005
+    type: open
+    subtopic: incidents
+    level: 2
+    prompt: What does being "on call" mean, and what makes on-call sustainable?
+    rubric:
+      keyPoints:
+        - { text: "A rotating person responsible for responding to production alerts outside normal hours", weight: 2 }
+        - { text: "Alerts must be actionable and rare; noisy alerts cause burnout", weight: 3 }
+        - { text: "Runbooks, clear escalation paths, and handoffs between shifts", weight: 2 }
+        - { text: "Fair rotation, follow-up work to remove the causes of pages", weight: 2 }
+    modelAnswer: |
+      On call means that for a period, usually a week in rotation, one person is responsible for responding to production alerts, including at night. It's sustainable when pages are rare and actionable: every alert means something is really wrong and needs a human now. Each alert has a runbook, there's a clear escalation path if you're stuck, and there's a handoff between shifts. The rotation is shared fairly, and the team actually fixes the causes of repeated pages instead of getting used to them.
+    explanation: "A common target: no more than about two incidents per on-call shift. More than that is a signal to invest in reliability."
+
+  - id: sre-design-002
+    type: open
+    subtopic: design
+    level: 2
+    prompt: How would you design a simple URL shortener so it handles a lot of traffic?
+    rubric:
+      keyPoints:
+        - { text: "Stateless app servers behind a load balancer, autoscaled", weight: 2 }
+        - { text: "A database mapping short code → long URL; unique code generation", weight: 2 }
+        - { text: "Reads (redirects) far outnumber writes, so put a cache (Redis/CDN) in front of the database", weight: 3 }
+        - { text: "Monitoring, rate limiting against abuse, and multiple AZs for availability", weight: 2 }
+    modelAnswer: |
+      Two operations: create a short link, and redirect from a short link. Redirects happen far more often, so I design for reads. Stateless app servers behind a load balancer, autoscaled across several availability zones. A database table maps the short code to the long URL; codes come from an ID converted to base62, or random strings checked for uniqueness. Because the same popular links are read again and again, I put Redis, or even a CDN, in front of the database, so most redirects never touch it. Add rate limiting against abuse, and monitoring of latency and error rate.
+    explanation: "In interviews, start by asking about scale (requests per second, read/write ratio), then draw the simple version, then improve it."
+
+  - id: sre-dr-003
+    type: mcq
+    subtopic: dr
+    level: 1
+    prompt: What is the "3-2-1" backup rule?
+    options:
+      - "3 copies of the data, on 2 different kinds of storage, with 1 copy in a different location"
+      - "Back up 3 times a day, keep 2 weeks, test 1 restore a year"
+      - "3 servers, 2 databases, 1 backup"
+      - "Restore within 3 hours, lose at most 2 hours, test 1 time"
+    correct: [0]
+    explanation: "In the cloud the 'different location' is usually another region or account, ideally with immutable backups so ransomware or a mistake can't delete them."
+
+  # ---------- Added: basics ----------
+  - id: sre-avail-006
+    type: mcq
+    subtopic: availability
+    level: 1
+    prompt: What's the difference between active-active and active-passive setups?
+    options:
+      - "Active-active: all copies serve traffic at the same time. Active-passive: one serves, and a standby takes over only when it fails"
+      - "Active-active uses two clouds; active-passive uses one"
+      - "Active-passive is always faster"
+      - "They're the same"
+    correct: [0]
+    explanation: "Web servers behind a load balancer are active-active. A classic database with a standby replica (RDS Multi-AZ) is active-passive. Active-passive is simpler, but the standby's capacity sits idle."
+
+  - id: sre-avail-007
+    type: mcq
+    subtopic: availability
+    level: 2
+    prompt: What does a "circuit breaker" do in a service that calls another service?
+    options:
+      - "After many failures it stops calling the failing service for a while and fails fast (or uses a fallback), so one broken dependency doesn't drag everything down"
+      - "It shuts down the server when CPU is high"
+      - "It restarts the failing service"
+      - "It encrypts traffic between services"
+    correct: [0]
+    explanation: "Without it, requests pile up waiting for timeouts and the caller runs out of threads or connections too. Retries with backoff, timeouts and circuit breakers go together."
+
+  - id: sre-db-006
+    type: mcq
+    subtopic: databases
+    level: 1
+    prompt: What is a CDN?
+    options:
+      - "A network of servers around the world that caches content (images, JS, videos) close to users"
+      - "A type of database"
+      - "A tool for container deployments"
+      - "A DNS record type"
+    correct: [0]
+    explanation: "CloudFront, Cloudflare and Akamai are CDNs. They make pages load faster and take load off your servers. Cache headers (`Cache-Control`) decide what's cached and for how long."
+
+  - id: sre-db-007
+    type: mcq
+    subtopic: databases
+    level: 1
+    prompt: Why use database replication (a primary and one or more replicas)?
+    options:
+      - "For availability (a replica can take over if the primary fails) and to spread read traffic across replicas"
+      - "To make writes faster"
+      - "To avoid backups"
+      - "To store different data in each copy"
+    correct: [0]
+    explanation: "Writes go to the primary; replicas copy the changes. Replication is **not** a backup: if someone deletes a table, the deletion is replicated too."
+
+  - id: sre-db-008
+    type: mcq
+    subtopic: databases
+    level: 2
+    prompt: What is a database connection pool, and why use one?
+    options:
+      - "A set of open connections the app reuses, instead of opening a new (slow, expensive) connection for every request"
+      - "A group of database servers"
+      - "A backup schedule"
+      - "A cache of query results"
+    correct: [0]
+    explanation: "Each connection uses memory on the DB server, and databases have a connection limit. With many pods each holding a pool, you can hit that limit; that's when tools like PgBouncer or RDS Proxy help."
+
+  - id: sre-inc-006
+    type: mcq
+    subtopic: incidents
+    level: 1
+    prompt: During a production outage, what is the first priority?
+    options:
+      - "Restore service for users (mitigate: roll back, fail over, scale), then find the root cause"
+      - "Find out exactly whose change caused it"
+      - "Write the postmortem"
+      - "Fix the bug properly before doing anything else"
+    correct: [0]
+    explanation: "Mitigate first, investigate later. Keep notes and timestamps while you work; they're the raw material for the blameless postmortem afterwards."
+
+  - id: sre-inc-007
+    type: mcq
+    subtopic: incidents
+    level: 1
+    prompt: In SRE, what is "toil"?
+    options:
+      - "Manual, repetitive operational work that could be automated and doesn't have lasting value"
+      - "Any work done on weekends"
+      - "Writing documentation"
+      - "Fixing bugs in application code"
+    correct: [0]
+    explanation: "Examples: restarting a service by hand every week, or manually creating users. Google's SRE book suggests keeping toil under 50% of an engineer's time and automating the rest."
+
+  - id: sre-dr-004
+    type: mcq
+    subtopic: dr
+    level: 1
+    prompt: Why should you regularly test **restoring** from your backups?
+    options:
+      - "A backup you've never restored might be broken, incomplete or too slow to restore; you only know by trying"
+      - "Because restoring is free"
+      - "To make the backups smaller"
+      - "Testing is only needed once, when backups are set up"
+    correct: [0]
+    explanation: "Teams discover during a real disaster that backups were empty, encrypted with a lost key, or take 12 hours to restore. A scheduled restore test also measures your real RTO."
+
+  - id: sre-design-003
+    type: open
+    subtopic: design
+    level: 2
+    prompt: Marketing says traffic will be 10 times higher than usual during a sale next week. How do you prepare?
+    rubric:
+      keyPoints:
+        - { text: "Load test ahead of time to find the bottleneck (often the database, not the web tier)", weight: 3 }
+        - { text: "Scaling: check autoscaling limits and quotas, pre-scale before the event", weight: 2 }
+        - { text: "Reduce load: CDN and caching for static and popular content; queues for slow work", weight: 2 }
+        - { text: "Protect the system: rate limiting, graceful degradation (turn off non-essential features)", weight: 2 }
+        - { text: "Monitoring, alerts and an on-call plan for the event; freeze risky deploys", weight: 1 }
+    modelAnswer: |
+      First I'd find out where it breaks: run a load test at 10x against staging and see which part fails first. It's often the database or an external API, not the web servers.
+      Then scaling: check the HPA or Auto Scaling max values, cloud quotas and database capacity, and scale up ahead of time instead of waiting for autoscaling to react.
+      To reduce load, put static and popular content behind the CDN and cache, and move slow work like emails and reports to a queue.
+      To protect the system, add rate limiting and a plan for graceful degradation, like turning off recommendations if the database is struggling.
+      Finally, dashboards and alerts for the event, people on call, and no risky deploys that day.
+    explanation: "Interviewers like hearing \"load test first\": it shows you base decisions on measurements, not guesses."

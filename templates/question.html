@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<p class="muted">{{ topic_title(topic) }} · {{ t.level }} {{ q.level }}</p>
+
+<div class="card">
+  <div class="prompt">{{ tx(q, 'prompt') | md }}</div>
+
+  <form method="post">
+
+    {# ---------- Multiple choice ---------- #}
+    {% if q.type == "mcq" %}
+      {% set options = tx(q, 'options') %}
+      {% for i in option_order %}
+      <label class="option">
+        <input type="{{ 'checkbox' if q.correct | length > 1 else 'radio' }}" name="option" value="{{ i }}"
+               {% if result %}disabled {% if i in picked %}checked{% endif %}{% endif %}>
+        <span>{{ options[i] | md_inline }}</span>
+        {% if result and i in q.correct %}<b class="ok">✓</b>{% elif result and i in picked %}<b class="bad">✗</b>{% endif %}
+      </label>
+      {% endfor %}
+    {% endif %}
+
+    {# ---------- Command ---------- #}
+    {% if q.type == "command" %}
+      <label class="muted">{{ t.your_command }}</label>
+      <input class="command" name="answer" dir="ltr" autocomplete="off" spellcheck="false" autofocus
+             value="{{ answer or '' }}" {% if result %}readonly{% endif %}>
+    {% endif %}
+
+    {# ---------- Order the steps ---------- #}
+    {% if q.type == "order" %}
+      <p class="muted">{{ t.order_help }}</p>
+      {% if error %}<p class="error">{{ t.order_error }}</p>{% endif %}
+      {% set steps = tx(q, 'steps') %}
+      {% for i in (user_order if result else step_order) %}
+      <div class="option">
+        <select name="pos_{{ i }}" {% if result %}disabled{% endif %}>
+          <option value=""></option>
+          {% for n in range(1, steps | length + 1) %}
+          <option value="{{ n }}" {% if result and user_order.index(i) + 1 == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+        <span>{{ steps[i] | md_inline }}</span>
+      </div>
+      {% endfor %}
+    {% endif %}
+
+    {# ---------- Open question: write, reveal, then grade yourself ---------- #}
+    {% if q.type == "open" %}
+      <label class="muted">{{ t.your_answer }}</label>
+      <textarea name="answer" rows="6" dir="auto" {% if revealed %}readonly{% endif %}>{{ answer or '' }}</textarea>
+
+      {% if revealed %}
+        <h3>{{ t.model_answer }}</h3>
+        <div class="answer">{{ tx(q, 'modelAnswer') | md }}</div>
+        <h3>{{ t.self_check }}</h3>
+        {% for point in tx(q, 'keyPoints') %}
+        <label class="option">
+          <input type="checkbox" name="kp" value="{{ loop.index0 }}" {% if result %}disabled{% endif %}>
+          <span>{{ point | md_inline }}</span>
+        </label>
+        {% endfor %}
+        {% if not result %}<button name="action" value="selfgrade">{{ t.save_self }}</button>{% endif %}
+      {% elif not result %}
+        <button name="action" value="reveal">{{ t.show_answer }}</button>
+      {% endif %}
+    {% endif %}
+
+    {% if not result and q.type != "open" %}<button>{{ t.check }}</button>{% endif %}
+  </form>
+</div>
+
+{# ---------- Feedback ---------- #}
+{% if result %}
+<div class="card result {{ result.verdict }}">
+  <h2>{{ t[result.verdict] }} · {{ t.score }} {{ result.score }}</h2>
+
+  {% if q.type == "command" %}
+    <h3>{{ t.right_answer }}</h3>
+    <pre dir="ltr">{{ q.answers[0] }}</pre>
+  {% elif q.type == "order" %}
+    <h3>{{ t.right_answer }}</h3>
+    <ol>
+      {% for step in tx(q, 'steps') %}<li>{{ step | md_inline }}</li>{% endfor %}
+    </ol>
+  {% endif %}
+
+  {% if q.explanation %}
+    <h3>{{ t.explanation }}</h3>
+    <div>{{ tx(q, 'explanation') | md }}</div>
+  {% endif %}
+
+  <div class="actions">
+    <a class="button" href="{{ url_for('practice_topic', topic_id=q.topic) }}">{{ t.next }}</a>
+    <a href="{{ url_for('index') }}">{{ t.back }}</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

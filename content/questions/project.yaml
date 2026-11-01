@@ -1,0 +1,201 @@
+topic: project
+questions:
+  - id: proj-arch-001
+    type: open
+    subtopic: architecture
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: Walk me through the architecture of your course project, MyBroker, in about 2 minutes.
+    rubric:
+      keyPoints:
+        - { text: "What the app is: a Next.js portfolio tracker; stateless server, data in the browser (IndexedDB), server proxies market data", weight: 2 }
+        - { text: "Infra: Terraform creates a 3-node kind cluster and installs the platform (Traefik ingress, cert-manager TLS, metrics-server, kube-prometheus-stack, Argo CD)", weight: 3 }
+        - { text: "Delivery: Helm chart with per-env values; Argo CD app-of-apps for staging and prod (auto-sync, prune, self-heal)", weight: 3 }
+        - { text: "CI/CD: GitHub Actions CI gates (lint, tests, build, Trivy, helm lint, kubeconform, terraform validate); release builds an image to GHCR and commits the new tag to Git", weight: 3 }
+        - { text: "Observability and reliability: /api/metrics + ServiceMonitor, Grafana dashboard, PrometheusRule alerts, HPA/PDB/probes", weight: 2 }
+        - { text: "Clear structure: start high level, then layers, then a key decision or trade-off", weight: 1 }
+    modelAnswer: |
+      MyBroker is a Next.js app that tracks investment portfolios. The server is stateless: user data stays in the browser's IndexedDB, and the server only proxies market data with a small in-memory cache. For the course I built a production-style platform for it that runs locally for $0. One `terraform apply` creates a 3-node kind cluster and installs the platform: Traefik as the ingress, cert-manager with a local CA for TLS, metrics-server for the HPA, kube-prometheus-stack for monitoring, and Argo CD. The app is packaged as a Helm chart with Deployment, Service, Ingress, HPA, PDB, NetworkPolicy, ServiceMonitor and alert rules, plus values files per environment. Argo CD runs an app-of-apps that deploys staging and prod from Git with auto-sync and self-heal. GitHub Actions does CI on every PR (lint, tests, Docker build, Trivy scan, helm lint, kubeconform, terraform validate), and the release workflow pushes the image to GHCR and commits the new tag to Git, so Argo CD deploys it. I never run kubectl apply from CI.
+    explanation: Practice this out loud until it's under 2 minutes. Interviewers then pick one layer and dig in, so know each layer's "why".
+    followUps: ["Why did you choose GitOps instead of deploying from the CI pipeline?", "What would you change to run this on AWS?"]
+
+  - id: proj-arch-002
+    type: open
+    subtopic: architecture
+    level: 2
+    tags: [your-stack]
+    prompt: Why did you use kind instead of a managed cluster like EKS, and what would change to move it to AWS?
+    rubric:
+      keyPoints:
+        - { text: "Constraint: $0 budget and a local, offline-capable demo; kind runs real upstream Kubernetes (same API/manifests)", weight: 3 }
+        - { text: "Swap the kind cluster resource for an EKS (+VPC) Terraform module", weight: 2 }
+        - { text: "Ingress behind a cloud LoadBalancer; Let's Encrypt + external-dns instead of the local CA", weight: 2 }
+        - { text: "Remote Terraform state (S3 + locking); External Secrets + Secrets Manager; persistent storage for Prometheus", weight: 2 }
+        - { text: "Helm chart and Argo CD setup stay the same", weight: 1 }
+    modelAnswer: |
+      The constraints were zero cost and a demo that works on my laptop without exposing anything to the internet. kind runs real upstream Kubernetes, so the manifests, the Helm chart and Argo CD are exactly what you'd use on a managed cluster. To move to AWS I'd swap the kind cluster resource in Terraform for the EKS module plus a VPC module, put the ingress behind a cloud load balancer, replace the local CA with a Let's Encrypt issuer and external-dns, move Terraform state to S3 with locking, replace Terraform-created secrets with External Secrets syncing from AWS Secrets Manager, and give Prometheus persistent volumes or use a managed Prometheus. The chart and the GitOps layer wouldn't change, which was the point of the design.
+    explanation: Showing you know the difference between local and production setups is exactly what juniors are judged on.
+
+  - id: proj-arch-003
+    type: open
+    subtopic: architecture
+    level: 2
+    tags: [your-stack]
+    prompt: Your app keeps an in-memory cache per pod. What are the trade-offs, and what would you change at larger scale?
+    rubric:
+      keyPoints:
+        - { text: "Stateless pods are interchangeable: easy horizontal scaling, no session affinity, simple DR", weight: 2 }
+        - { text: "Per-pod cache means duplicated upstream requests (N pods → up to N× calls to Yahoo) and inconsistent cache hits", weight: 3 }
+        - { text: "At scale: a shared cache like Redis (or a CDN/edge cache) to reduce upstream load", weight: 3 }
+        - { text: "Watch upstream rate limits; alert on upstream failures rather than failing health checks", weight: 1 }
+    modelAnswer: |
+      Keeping the server stateless was deliberate: pods are interchangeable, so the HPA can add or remove them freely, there's no session affinity, and disaster recovery is just re-applying Terraform and letting Argo CD restore everything. The cost is that each pod has its own small quote cache, so with 6 pods the upstream price API can see up to 6 times the requests, and cache hit rates are lower. At this scale that's fine. At larger scale I'd add a shared cache like Redis in front of the upstream calls, possibly with request coalescing, so all pods share one cache and we stay well under the provider's rate limits.
+    explanation: Naming your own design's weak spot and the next step is a strong signal in interviews.
+
+  - id: proj-pipe-001
+    type: open
+    subtopic: pipeline
+    level: 1
+    tags: [il-common, your-stack]
+    prompt: Why did you choose a GitOps pull model with Argo CD instead of having CI run `kubectl apply` or `helm upgrade`?
+    rubric:
+      keyPoints:
+        - { text: "Security: CI doesn't need cluster credentials; the cluster pulls from Git", weight: 3 }
+        - { text: "Practical: GitHub runners can't reach a laptop/private cluster", weight: 2 }
+        - { text: "Git is the source of truth and audit log: who deployed what, when; rollback = git revert", weight: 3 }
+        - { text: "Self-heal reverts manual drift; prune removes deleted resources", weight: 2 }
+    modelAnswer: |
+      Two reasons. Practically, GitHub's runners can't reach a cluster running on my laptop, and in a real company you also don't want CI to hold cluster-admin credentials. With GitOps the cluster pulls: Argo CD runs inside the cluster and watches Git, so CI only needs permission to push an image and a commit. And it gives a better model: Git becomes the source of truth and the audit log of every deploy, a rollback is a `git revert`, and with self-heal enabled, if someone changes something by hand with kubectl, Argo CD puts it back to what's in Git. Prune removes resources that were deleted from the chart.
+    explanation: The pull model also scales to many clusters, since each one pulls its own config.
+
+  - id: proj-pipe-002
+    type: order
+    subtopic: pipeline
+    level: 2
+    tags: [your-stack]
+    prompt: "Order what happens in MyBroker from a merged PR to a production deploy."
+    steps:
+      - "PR checks pass in ci.yml and the PR is merged to main"
+      - "release.yml builds the multi-arch image once and pushes it to GHCR tagged sha-<7>"
+      - "The workflow commits the new tag to values-staging.yaml; Argo CD syncs staging"
+      - "A v* tag re-tags the same image and opens a promotion PR for values-prod.yaml"
+      - "The promotion PR is reviewed and merged; Argo CD syncs prod"
+    explanation: "Build once, promote the same artifact. Review is the approval gate, the merge is the deploy, and a revert is the rollback."
+
+  - id: proj-pipe-003
+    type: open
+    subtopic: pipeline
+    level: 2
+    tags: [your-stack]
+    prompt: How do you get zero-downtime deployments in your project?
+    rubric:
+      keyPoints:
+        - { text: "Rolling update with maxUnavailable: 0 (and surge), so capacity never drops", weight: 3 }
+        - { text: "Readiness probe: new pods only get traffic when ready; a broken release stalls instead of serving errors", weight: 3 }
+        - { text: "preStop sleep for graceful connection draining before SIGTERM", weight: 2 }
+        - { text: "PDB minAvailable plus topology spread across workers so node drains never take the last replica", weight: 2 }
+    modelAnswer: |
+      Several pieces together. The Deployment uses a rolling update with `maxUnavailable: 0`, so we always have full capacity during a rollout. A readiness probe means a new pod gets traffic only when it's actually ready, so a broken image just stalls the rollout while the old pods keep serving, and I demonstrated that with a deliberately bad release and a rollback. A `preStop` sleep gives the ingress time to stop routing to a pod before it gets SIGTERM, so in-flight requests finish. A PodDisruptionBudget with `minAvailable: 1` plus topology spread across the two workers means draining a node for maintenance never removes the last replica.
+    explanation: "The `chaos-pod`, `chaos-node` and `chaos-bad` Makefile targets demonstrate each of these."
+
+  - id: proj-ops-001
+    type: open
+    subtopic: operations
+    level: 2
+    tags: [your-stack]
+    prompt: How did you secure the workloads in your project?
+    rubric:
+      keyPoints:
+        - { text: "Image: multi-stage, minimal Alpine base, non-root user, Trivy scan in CI failing on fixable HIGH/CRITICAL, hadolint, SBOM/provenance", weight: 2 }
+        - { text: "Pod: Pod Security Standard restricted; runAsNonRoot, read-only root FS, drop all capabilities, seccomp RuntimeDefault, no SA token", weight: 3 }
+        - { text: "Network: default-deny NetworkPolicy, only ingress from Traefik and Prometheus, egress only DNS and HTTPS", weight: 3 }
+        - { text: "Secrets created by Terraform (not in Git); metrics endpoint protected by a bearer token; Argo CD AppProject restricts sources/destinations", weight: 2 }
+    modelAnswer: |
+      In layers. The image is a multi-stage build on a minimal Alpine base running as a non-root user, linted with hadolint and scanned by Trivy in CI, which fails the build on fixable high and critical CVEs, and release images get SBOM and provenance attestations. The namespaces enforce the Pod Security Standard "restricted", so pods run as non-root with a read-only root filesystem, all Linux capabilities dropped, the RuntimeDefault seccomp profile and no service-account token mounted. A default-deny NetworkPolicy only lets Traefik and Prometheus connect in, and only DNS and HTTPS to public IPs out. Secrets are created by Terraform and never committed, the metrics endpoint needs a bearer token only Prometheus has, and the Argo CD AppProject only allows this repo and the mybroker namespaces.
+    explanation: "Know at least one concrete detail per layer. Interviewers love \"read-only root filesystem, so /tmp is an emptyDir\"."
+
+  - id: proj-ops-002
+    type: open
+    subtopic: operations
+    level: 2
+    tags: [your-stack]
+    prompt: What do you monitor and alert on in your project, and why do your health checks not call external APIs?
+    rubric:
+      keyPoints:
+        - { text: "App metrics via /api/metrics (prom-client): requests and latency per route, upstream calls per provider and outcome, cache hit/miss, runtime", weight: 2 }
+        - { text: "Grafana dashboard with golden signals; ServiceMonitor for discovery", weight: 2 }
+        - { text: "Alerts: no healthy pods, crash-looping, error rate > 5%, p95 > 2s, upstream failing, HPA at max", weight: 2 }
+        - { text: "Health endpoint answers from memory so an upstream outage doesn't cause a restart storm; upstream failures are an alert instead", weight: 3 }
+    modelAnswer: |
+      The app exposes Prometheus metrics at `/api/metrics`: request count and latency per API route, upstream calls per data provider with their outcome, cache hits and misses, and Node.js runtime metrics. A ServiceMonitor in the chart registers it with Prometheus, and a Grafana dashboard ships as a ConfigMap with the golden signals, status codes, upstream health, per-pod resources and HPA replicas. Alert rules cover no healthy pods, crash-looping, error rate above 5%, p95 latency above 2 seconds, an upstream provider failing more than half the time, and the HPA stuck at max, each linking to a runbook section. `/api/health` deliberately answers from memory: if Yahoo goes down, I don't want Kubernetes to restart perfectly healthy pods. That situation is an alert, not a probe failure.
+    explanation: That last point (liveness vs dependency health) is a mature design choice. Make sure you mention it.
+
+  - id: proj-ops-003
+    type: open
+    subtopic: operations
+    level: 2
+    tags: [your-stack]
+    prompt: Tell me about a technical problem you hit while building the project and how you solved it.
+    rubric:
+      keyPoints:
+        - { text: "Describes a specific, real problem (e.g. Terraform kubectl provider breaking single-apply cluster creation, Traefik chart v41 value changes, stale kindnet NetworkPolicy state)", weight: 3 }
+        - { text: "How it was diagnosed (errors, docs, reading chart values, testing hypotheses)", weight: 3 }
+        - { text: "The fix and why it works", weight: 2 }
+        - { text: "What was learned / how it's prevented (documented in runbook, make target)", weight: 2 }
+    modelAnswer: |
+      One example: I wanted the whole platform created in a single `terraform apply`, but the kubectl provider I first used for custom resources, like the cert-manager ClusterIssuer and the Argo CD root Application, broke that. It needs to talk to the cluster during the plan, before the cluster even exists. I diagnosed it from the plan errors and the provider's docs. The fix was to wrap those CRD objects in small local Helm charts installed with the helm provider, which only renders them at apply time, after the CRDs exist. Another one: after Docker Desktop slept, kind's NetworkPolicy enforcement had stale state and blocked traffic it should allow. I found it by testing connectivity pod to pod, and added a `make fix-netpol` target and a runbook entry so it's a one-command fix.
+    explanation: Use STAR (Situation, Task, Action, Result) and be specific. Real error messages and the debugging path matter more than a polished story.
+
+  - id: proj-arch-004
+    type: mcq
+    subtopic: architecture
+    level: 1
+    tags: [your-stack]
+    prompt: In MyBroker, where is the user's portfolio data stored?
+    options:
+      - "In the browser's IndexedDB; the server is stateless and only proxies market data"
+      - "In a PostgreSQL database inside the cluster"
+      - "In a Kubernetes ConfigMap"
+      - "In an S3 bucket"
+    correct: [0]
+    explanation: "That's why the pods are interchangeable and the HPA can scale them freely: there's no database to migrate or back up on the server side. Be ready for the follow-up: \"what would change if users needed to log in from several devices?\" (a real database and auth)."
+
+  - id: proj-pipe-004
+    type: open
+    subtopic: pipeline
+    level: 2
+    tags: [your-stack]
+    prompt: A bad release reached production in your project. How do you roll it back, and why not just click "rollback" in Argo CD?
+    rubric:
+      keyPoints:
+        - { text: "Revert the commit that changed the prod image tag (values-prod.yaml); Argo CD syncs the previous version", weight: 3 }
+        - { text: "Git stays the source of truth and keeps an audit trail of the rollback", weight: 2 }
+        - { text: "With auto-sync and self-heal on, a manual rollback in the UI or kubectl would be reverted back to what Git says (or you must pause auto-sync first)", weight: 3 }
+        - { text: "Readiness probes and maxUnavailable 0 mean a release that fails readiness stalls instead of taking prod down; check dashboards and alerts to confirm recovery", weight: 2 }
+    modelAnswer: |
+      Production runs whatever image tag is in `values-prod.yaml`, so the rollback is `git revert` of the promotion commit, through a quick PR. Argo CD sees the change and syncs the previous tag, which is already in GHCR, so it's fast.
+      I don't roll back from the Argo CD UI or with kubectl, because auto-sync with self-heal would put the cluster straight back to what Git says. You'd have to pause auto-sync first, and then Git and the cluster disagree. A revert keeps Git as the source of truth and records who rolled back and why.
+      The design also limits the damage: a release whose pods never become ready stalls the rolling update, and the old pods keep serving. After the revert I'd watch the Grafana dashboard and alerts to confirm the error rate is back to normal.
+    explanation: "\"Rollback is a git revert\" is the short answer interviewers expect from someone who used GitOps."
+
+  - id: proj-ops-004
+    type: open
+    subtopic: operations
+    level: 2
+    tags: [your-stack]
+    prompt: If you had another month to work on your project, what would you improve, and why?
+    rubric:
+      keyPoints:
+        - { text: "Picks a few concrete improvements and explains the reason for each, not just a list of tools", weight: 3 }
+        - { text: "Production readiness: real cloud (EKS), remote Terraform state with locking, secrets from a secret manager (External Secrets)", weight: 2 }
+        - { text: "Safer delivery: canary releases with automatic analysis (e.g. Argo Rollouts)", weight: 2 }
+        - { text: "Observability: centralized logs (e.g. Loki) and/or tracing; supply chain: image signing (cosign) and admission policies (Kyverno)", weight: 2 }
+        - { text: "Prioritizes: says which one first and why", weight: 1 }
+    modelAnswer: |
+      _(Example. Pick the ones you can really talk about.)_
+      First I'd move it to a real cloud: EKS through Terraform modules, with remote state in S3 and locking, and secrets coming from AWS Secrets Manager through External Secrets instead of Terraform. That's the biggest gap between a demo and production.
+      Second, safer releases: canary deployments with Argo Rollouts, which checks the error rate from Prometheus and rolls back automatically. Right now a bad release that passes readiness reaches everyone.
+      Third, centralized logs with Loki, so I can search logs from all pods in Grafana next to the metrics.
+      If there's time, sign images with cosign and only allow signed images with a Kyverno policy.
+      I'd start with the cloud move, because the rest builds on it.
+    explanation: "Interviewers ask this to see whether you know the limits of your own work. Giving a reason and an order matters more than the number of tools."

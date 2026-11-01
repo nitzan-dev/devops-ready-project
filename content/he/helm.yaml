@@ -1,0 +1,223 @@
+topic: helm
+questions:
+  helm-basics-001:
+    prompt: מה זה Helm? ומה הם chart, release ו-values?
+    keyPoints:
+      - "Helm הוא מנהל חבילות ל-Kubernetes: הוא מתקין קבוצה של קבצי הגדרה כיחידה אחת"
+      - "chart הוא החבילה: Chart.yaml, תיקיית templates ו-values.yaml"
+      - "release הוא התקנה אחת של chart ב-namespace, עם היסטוריה של גרסאות"
+      - "values הם ההגדרות שממלאות את התבניות, ומשנים אותן לכל סביבה עם -f או --set"
+    modelAnswer: |
+      Helm הוא מנהל חבילות ל-Kubernetes. במקום להתקין עשרות קבצי YAML אחד-אחד, מתקינים חבילה אחת.
+      ה-**chart** הוא החבילה עצמה. יש בו `Chart.yaml` עם שם וגרסה, תיקיית `templates/` עם קבצי ההגדרה (עם "חורים" למילוי), וקובץ `values.yaml` עם ערכי ברירת המחדל.
+      כשמתקינים chart נוצר **release**: התקנה עם שם, בתוך namespace. Helm זוכר כל גרסה שלו, ולכן אפשר לשדרג ולחזור אחורה.
+      ה-**values** ממלאים את החורים בתבניות: גרסת ה-image, מספר העותקים, כתובת האתר. לכל סביבה מעבירים קובץ values אחר, למשל `-f values-prod.yaml`. כך אותו chart מתקין את אותה אפליקציה ל-staging ולפרודקשן, כל אחת עם ההגדרות שלה.
+    explanation: "ב-MyBroker יש chart אחד עם שני קבצים, `values-staging.yaml` ו-`values-prod.yaml`, ו-Argo CD משתמש בקובץ המתאים לכל סביבה."
+
+  helm-basics-002:
+    prompt: התקינו או שדרגו את ה-release בשם `api` מה-chart המקומי `./chart` ב-namespace בשם `prod`, עם הקובץ `values-prod.yaml`. אם ה-namespace לא קיים, צרו אותו.
+    explanation: "`upgrade --install` מתקין בפעם הראשונה ומשדרג בפעמים הבאות. לכן הוא מושלם ל-pipeline: אותה פקודה עובדת תמיד. `--wait` מחכה שהכל יעלה, ו-`--atomic` מחזיר אחורה אוטומטית אם משהו נכשל."
+
+  helm-basics-003:
+    prompt: באיזה קובץ ב-Helm chart נמצאים ערכי ברירת המחדל של ההגדרות?
+    options: ["values.yaml", "Chart.yaml", "templates/_helpers.tpl", "requirements.txt"]
+    explanation: "`values.yaml` מחזיק את ברירות המחדל. `Chart.yaml` מחזיק את השם, הגרסה והתלויות. בתיקייה `templates/` נמצאים קבצי ההגדרה, וב-`_helpers.tpl` נמצאות תבניות קטנות לשימוש חוזר."
+
+  helm-basics-004:
+    prompt: הציגו את כל ה-releases של Helm בכל ה-namespaces.
+    explanation: "`helm list` לבד מציג רק את ה-namespace הנוכחי. `-A` מציג את כולם. `-a` (אות קטנה) מציג גם releases שנכשלו או נתקעו."
+
+  helm-basics-005:
+    prompt: למה להשתמש ב-Helm chart ולא בקבצי YAML רגילים של Kubernetes?
+    options:
+      - "חבילה אחת לשימוש חוזר עם משתנים לכל סביבה, וגרסאות שאפשר לשדרג ולהחזיר אחורה"
+      - "Helm גורם ל-Pods לרוץ מהר יותר"
+      - "Kubernetes לא יודע לקרוא YAML רגיל"
+      - "עם Helm לא צריך יותר את kubectl בכלל"
+    explanation: "קבצי YAML רגילים עובדים, אבל מהר מאוד מעתיקים אותם לכל סביבה ושוכחים לעדכן. ב-chart רק ההבדלים (גרסה, מספר עותקים, כתובות) נכנסים למשתנים, ו-Helm שומר היסטוריה של כל התקנה."
+
+  helm-basics-006:
+    prompt: מה זו תלות של chart (subchart), ומתי משתמשים בה?
+    keyPoints:
+      - "chart יכול להצהיר על charts אחרים שהוא צריך, בחלק dependencies בקובץ Chart.yaml"
+      - "הפקודה helm dependency update מורידה אותם לתיקייה charts/"
+      - "שימוש: אפליקציה שמביאה איתה Redis או PostgreSQL לפיתוח, או chart-על שמתקין כמה שירותים יחד"
+      - "את ההגדרות של ה-subchart כותבים ב-values של ה-chart הראשי תחת השם שלו, ואפשר להדליק/לכבות אותו עם condition"
+    modelAnswer: |
+      chart יכול להגיד "אני צריך גם את ה-charts האלה". כותבים אותם בחלק `dependencies` בקובץ `Chart.yaml`, עם שם, טווח גרסאות ומאגר.
+      הפקודה `helm dependency update` מורידה אותם לתיקייה `charts/`, והם מותקנים יחד עם ה-chart הראשי.
+      שימוש נפוץ: אפליקציה שמביאה איתה PostgreSQL או Redis לסביבת פיתוח. או chart-על (umbrella) שמתקין כמה שירותים בבת אחת.
+      את ה-subchart מגדירים מתוך ה-values של ה-chart הראשי, תחת השם שלו. למשל `postgresql.auth.password`. אפשר גם להדליק או לכבות אותו עם `condition`, למשל `postgresql.enabled`.
+    explanation: בפרודקשן מסד הנתונים בדרך כלל מגיע משירות מנוהל, ולכן מכבים שם את ה-subchart.
+
+  helm-tpl-001:
+    prompt: איך רואים בדיוק אילו קבצי Kubernetes ה-chart ייצור, בלי להתקין כלום?
+    options: ["helm template ./chart -f values.yaml", "helm install --verbose", "kubectl get chart", "helm status"]
+    explanation: "`helm template` מייצר את הקבצים מקומית ומדפיס אותם. אפשר להעביר את הפלט ל-`kubeconform` כדי לבדוק שהם תקינים. גם `helm install --dry-run --debug` מציג אותם, אבל הוא מדבר עם ה-cluster. `helm lint` בודק את מבנה ה-chart."
+
+  helm-tpl-002:
+    prompt: "מה עושה הביטוי `{{ .Values.image.tag | default .Chart.AppVersion }}` בתבנית?"
+    options:
+      - "לוקח את image.tag מה-values, ואם הוא ריק משתמש ב-appVersion של ה-chart"
+      - "קובע את הגרסה של ה-chart"
+      - "נכשל אם image.tag חסר"
+      - "קובע את ה-image לגרסה latest"
+    explanation: "Helm משתמש בתבניות של Go עם פונקציות עזר (`default`, `quote`, `toYaml`, `include`, `required`). למשל `required \"הודעה\" .Values.x` גורם לשגיאה ברורה אם ערך חובה חסר."
+
+  helm-tpl-003:
+    prompt: "איך משנים ערך אחד בזמן ההתקנה, בלי לערוך אף קובץ?"
+    options: ["helm install api ./chart --set image.tag=1.4.0", "helm install api ./chart image.tag=1.4.0", "helm install api ./chart --env image.tag=1.4.0", "helm install api ./chart --tag 1.4.0"]
+    explanation: "`--set key=value` משנה ערך אחד, ו-`-f file.yaml` משנה הרבה ערכים מקובץ. כשמשתמשים בשניהם, `--set` גובר. בין כמה קבצי `-f`, האחרון גובר."
+
+  helm-tpl-004:
+    prompt: בשביל מה משמש הקובץ `_helpers.tpl` ב-chart?
+    options:
+      - "תבניות קטנות עם שם (כמו השם המלא או labels משותפים) שמשתמשים בהן בתבניות אחרות עם include"
+      - "הוא מחזיק את ערכי ברירת המחדל"
+      - "זה קובץ בדיקה ש-Helm מריץ אחרי ההתקנה"
+      - "הוא מפרט את התלויות של ה-chart"
+    explanation: 'קבצים שמתחילים ב-`_` לא הופכים לקבצי Kubernetes. הם מחזיקים בלוקים של `define`, למשל `mychart.labels`, ומשתמשים בהם במקומות אחרים עם `{{ include "mychart.labels" . }}`. כך ה-labels זהים בכל מקום.'
+
+  helm-tpl-005:
+    prompt: איך גורמים לאותו Helm chart להתקין אחרת ב-staging ובפרודקשן?
+    keyPoints:
+      - "chart אחד, וההבדלים בקבצי values נפרדים (values-staging.yaml, values-prod.yaml)"
+      - "הבדלים טיפוסיים: מספר עותקים, משאבים, גרסת image, כתובות אתר, הדלקה/כיבוי של פיצ׳רים, autoscaling"
+      - "מעבירים את הקובץ הנכון בהתקנה (-f), או ש-Argo CD בוחר אותו לכל סביבה"
+      - "סודות לא נכנסים לקבצי values ב-Git; משתמשים בכספת סודות / External Secrets"
+    modelAnswer: |
+      שומרים chart אחד, עם ברירות מחדל הגיוניות ב-`values.yaml`. את ההבדלים בלבד כותבים ב-`values-staging.yaml` וב-`values-prod.yaml`.
+      למשל: ב-staging עותק אחד, ובפרודקשן שלושה עותקים עם הגדלה אוטומטית. בפרודקשן יותר CPU וזיכרון. כתובת אתר שונה, וגרסת ה-image שרוצים לפרוס.
+      בהתקנה מעבירים את הקובץ המתאים עם `-f values-prod.yaml`. ב-GitOps, לכל סביבה יש Application משלה ב-Argo CD שמצביעה על קובץ ה-values שלה.
+      סודות לא נכנסים לקבצים האלה ב-Git. הם מגיעים מכספת סודות, למשל דרך External Secrets.
+    explanation: "ככה בדיוק בנוי ה-chart של MyBroker: chart אחד, שני קבצי values, ו-Argo CD פורס כל סביבה עם הקובץ שלה."
+
+  helm-ops-001:
+    prompt: '`helm upgrade` שבר את האפליקציה. איך חוזרים לגרסה הקודמת, ואיך רואים מה השתנה?'
+    keyPoints:
+      - "helm history <release> מציג את רשימת הגרסאות"
+      - "helm rollback <release> <revision> מחזיר לגרסה מסוימת"
+      - "helm get values / get manifest לכל גרסה (או התוסף helm diff) כדי להשוות"
+      - "עם GitOps מבטלים את ה-commit (revert), אחרת Argo CD יחזיר את הגרסה השבורה"
+      - "מניעה: --atomic/--wait ובדיקות ב-CI"
+    modelAnswer: |
+      קודם `helm history api -n prod`. הפקודה מציגה את כל הגרסאות (revisions) והאם כל אחת הצליחה.
+      אחר כך `helm rollback api 12 -n prod`, כדי לחזור לגרסה 12 שעבדה. Helm מחיל מחדש את הקבצים שלה.
+      כדי לראות מה השתנה: `helm get values` ו-`helm get manifest` עם `--revision` מציגים כל גרסה. התוסף `helm diff` מראה את ההבדלים עוד לפני שמשדרגים.
+      אם האפליקציה מנוהלת ע״י Argo CD, עושים revert ל-commit ב-Git. אחרת Argo CD פשוט יחזיר את הגרסה השבורה.
+      כדי שזה לא יקרה שוב: `--atomic` מחזיר אחורה אוטומטית כשהשדרוג נכשל, וב-CI מריצים `helm lint`, `helm template` ו-kubeconform.
+    explanation: "Helm שומר את מצב ה-release כ-Secret בתוך ה-namespace (בשם `sh.helm.release.v1.*`)."
+
+  helm-ops-002:
+    prompt: מה ההבדל בין `version` ל-`appVersion` בקובץ Chart.yaml?
+    options:
+      - "version היא הגרסה של ה-chart עצמו (מעלים כשה-chart משתנה); appVersion היא הגרסה של האפליקציה שהוא מתקין"
+      - "הן תמיד חייבות להיות שוות"
+      - "appVersion היא הגרסה של Kubernetes"
+      - "version היא הגרסה של כלי ה-Helm"
+    explanation: הן משתנות בנפרד. תיקון בתבנית מעלה את `version`. גרסה חדשה של האפליקציה מעלה את `appVersion` (ובדרך כלל גם את `version`).
+
+  helm-ops-003:
+    prompt: הציגו את היסטוריית הגרסאות של ה-release בשם `api` ב-namespace בשם `prod`.
+    explanation: "כל שדרוג או חזרה אחורה יוצרים גרסה (revision) עם מספר. `helm rollback api <מספר> -n prod` מחזיר לאחת מהן."
+
+  helm-ops-004:
+    prompt: מה עושה הדגל `--atomic` בפקודה `helm upgrade`?
+    options:
+      - "אם השדרוג נכשל או שהמשאבים לא עולים בזמן, Helm חוזר אוטומטית לגרסה הקודמת"
+      - "משדרג את כל ה-releases בבת אחת"
+      - "מדלג על התבניות"
+      - "מאיץ את השדרוג"
+    explanation: "`--atomic` כולל גם `--wait`. הוא שימושי ב-pipeline של CI, כדי ששדרוג שנכשל לא ישאיר release חצי שבור."
+
+  helm-ops-005:
+    prompt: '`helm upgrade` נכשל עם השגיאה "another operation (install/upgrade/rollback) is in progress". מה קרה ואיך מתקנים?'
+    keyPoints:
+      - "פעולה קודמת נקטעה באמצע (CI בוטל, timeout, בעיית רשת) והשאירה את ה-release במצב pending"
+      - "בודקים עם helm history / helm status איזו גרסה נתקעה"
+      - "מתקנים עם helm rollback לגרסה האחרונה שעבדה (ובמקרה קשה מוחקים את ה-Secret של הגרסה התקועה)"
+      - "מונעים: לא לבטל עבודת פריסה באמצע, להשתמש ב-concurrency ב-CI וב---atomic/--timeout"
+    modelAnswer: |
+      Helm שומר את מצב ה-release ב-Secret בתוך ה-namespace. אם שדרוג נקטע באמצע, למשל כי עבודת CI בוטלה או נגמר לה הזמן, הגרסה האחרונה נשארת במצב `pending-upgrade`. Helm מסרב להתחיל פעולה חדשה כל עוד היא שם.
+      מריצים `helm history api -n prod` ורואים איזו גרסה תקועה. אחר כך `helm rollback api <הגרסה האחרונה שעבדה> -n prod`, וה-release חוזר למצב תקין.
+      במקרים עקשניים מוחקים את ה-Secret של הגרסה התקועה.
+      כדי שזה לא יחזור: לא לתת ל-CI לבטל פריסה שרצה (concurrency group), ולהשתמש ב-`--atomic` עם `--timeout` הגיוני.
+    explanation: "זה אותו רעיון כמו נעילה תקועה של state ב-Terraform: פעולה שנקטעה השאירה סימן מאחוריה."
+
+  helm-basics-007:
+    prompt: הוסיפו את מאגר ה-charts של Bitnami (`https://charts.bitnami.com/bitnami`) בשם `bitnami`.
+    explanation: "אחרי שמוסיפים מאגר, מתקינים ממנו עם `helm install my-redis bitnami/redis`. הרבה פרויקטים מפרסמים היום charts ב-registry מסוג OCI, ומשתמשים בהם ישירות כ-`oci://registry/path/chart`."
+
+  helm-basics-008:
+    prompt: הורידו את הרשימה העדכנית של ה-charts מכל מאגרי Helm שהוספתם.
+    explanation: "כמו `apt update`: Helm שומר עותק מקומי של רשימת ה-charts בכל מאגר. בלי עדכון, לא תראו גרסאות חדשות."
+
+  helm-basics-009:
+    prompt: צרו שלד של chart חדש בתיקייה בשם `myapp`.
+    explanation: "נוצרים `Chart.yaml`, `values.yaml`, תיקיית `templates/` עם Deployment, Service, Ingress, HPA ו-helpers, וקובץ `.helmignore`. נקודת התחלה טובה; מוחקים את מה שלא צריך."
+
+  helm-basics-010:
+    prompt: מה המבנה הרגיל של תיקיית Helm chart?
+    options:
+      - "`Chart.yaml` (שם וגרסה), `values.yaml` (ברירות מחדל), ו-`templates/` (תבניות ה-YAML של Kubernetes)"
+      - "`Dockerfile`, `package.json` ו-`src/`"
+      - "`main.tf`, `variables.tf` ו-`outputs.tf`"
+      - "קובץ `chart.json` אחד"
+    explanation: "יכולים להיות גם `charts/` (תלויות), `values.schema.json` (בדיקת הערכים), `templates/NOTES.txt` (מודפס אחרי התקנה) ו-`_helpers.tpl`."
+
+  helm-basics-011:
+    prompt: הסירו את ה-release בשם `api` מה-namespace בשם `prod`.
+    explanation: "זה מוחק את כל אובייקטי Kubernetes שה-release יצר. PersistentVolumeClaims של StatefulSets בדרך כלל נשארים, כדי שמידע לא יימחק בטעות. `--keep-history` שומר את הרישום של ה-release."
+
+  helm-tpl-006:
+    prompt: הפיקו את ה-YAML של ה-chart `./chart` עם `values-prod.yaml` והדפיסו אותו, בלי לגעת ב-cluster.
+    explanation: "ב-CI שולחים את הפלט לכלי בדיקה: `helm template ... | kubeconform -strict`. כך תופסים YAML שבור ושדות שגויים לפני שמשהו נפרס."
+
+  helm-tpl-007:
+    prompt: בתבנית של Helm, למה מתייחס `{{ .Values.replicaCount }}`?
+    options:
+      - "לערך `replicaCount` מ-values.yaml, או ממה שדורס אותו (קובצי -f, --set)"
+      - "למספר ה-pods שרצים כרגע ב-cluster"
+      - "למשתנה סביבה במחשב שלכם"
+      - "לערך מ-Chart.yaml"
+    explanation: "עוד אובייקטים מובנים: `.Release.Name` ו-`.Release.Namespace`, `.Chart.Name` ו-`.Chart.Version`, ו-`.Capabilities` (מידע על גרסת ה-cluster)."
+
+  helm-tpl-008:
+    prompt: מה עושה `helm lint ./chart`?
+    options:
+      - "בודק את ה-chart ומחפש טעויות: YAML שבור, קבצים חובה שחסרים, ושגיאות בתבניות"
+      - "מסדר את העיצוב של קובצי ה-YAML"
+      - "פורס את ה-chart ל-namespace של בדיקות"
+      - "סורק את ה-images ומחפש חולשות"
+    explanation: "מריצים אותו ב-CI על כל pull request, יחד עם `helm template` ו-kubeconform. `--strict` הופך אזהרות לכישלון."
+
+  helm-tpl-009:
+    prompt: מריצים `helm upgrade api ./chart -f base.yaml -f prod.yaml --set image.tag=1.5`. אם שלושתם מגדירים `image.tag`, איזה ערך מנצח?
+    options:
+      - "`1.5` מ-‏--set; אחריו קובץ ה-‏-f המאוחר יותר (prod.yaml) גובר על המוקדם, ו-values.yaml של ה-chart אחרון"
+      - "base.yaml, כי הוא ראשון"
+      - "values.yaml של ה-chart תמיד מנצח"
+      - "Helm נכשל בגלל ההתנגשות"
+    explanation: "סדר העדיפות, מהגבוה לנמוך: `--set`, אחר כך קובצי `-f` מהאחרון לראשון, ואחר כך `values.yaml` של ה-chart. מילונים (maps) מתמזגים מפתח אחרי מפתח, אבל רשימות מוחלפות בשלמותן."
+
+  helm-ops-006:
+    prompt: הציגו את הערכים שאיתם הותקן ה-release בשם `api` ב-namespace בשם `prod`.
+    explanation: "בלי `--all` רואים רק את הערכים שאתם נתתם. עם `--all` רואים את כל הערכים, כולל ברירות המחדל של ה-chart. `helm get manifest` מציג את ה-YAML שנוצר, ו-`helm show values` מציג את ברירות המחדל של chart."
+
+  helm-ops-007:
+    prompt: מה עושה `helm upgrade --install`?
+    options:
+      - "משדרג את ה-release אם הוא קיים, או מתקין אותו אם לא; כך אותה פקודה עובדת בפריסה הראשונה ובכל פריסה אחריה"
+      - "מתקין עותק שני של ה-release"
+      - "משדרג את Helm עצמו"
+      - "מתקין רק את התלויות של ה-chart"
+    explanation: "לכן pipelines של CI משתמשים בה: הפקודה לא צריכה לדעת אם ה-release כבר קיים."
+
+  helm-ops-008:
+    prompt: איך רואים מה `helm upgrade` ישנה ב-cluster, לפני שמריצים אותו?
+    options:
+      - "עם ה-plugin ‏helm-diff (`helm diff upgrade ...`), או עם `helm upgrade --dry-run` שמפיק בלי להחיל"
+      - "מריצים `helm history`"
+      - "אין דרך; מריצים, ואם צריך חוזרים אחורה"
+      - "מריצים `helm lint`"
+    explanation: "`helm diff` משווה את ה-release החי למה שהשדרוג ייצור, כמו `terraform plan`. זה שלב נפוץ ב-CI לפני שדרוג של production."

@@ -1,0 +1,425 @@
+topic: aws
+questions:
+  # ---------- Fundamentals ----------
+  - id: aws-fund-001
+    type: open
+    subtopic: fundamentals
+    level: 1
+    tags: [il-common]
+    prompt: What are AWS Regions and Availability Zones, and how do you use them for high availability?
+    rubric:
+      keyPoints:
+        - { text: "A Region is a separate geographic area (e.g. eu-central-1) with multiple AZs", weight: 2 }
+        - { text: "An AZ is one or more isolated data centers with independent power/network, connected with low latency to other AZs in the region", weight: 3 }
+        - { text: "For HA, spread resources across at least 2-3 AZs (multi-AZ subnets, ASG, RDS Multi-AZ, LB across AZs)", weight: 3 }
+        - { text: "Multi-region for disaster recovery / latency to users / regulatory; more complex and costly", weight: 2 }
+    modelAnswer: |
+      A Region is a geographic area like `eu-central-1` (Frankfurt) or `il-central-1` (Tel Aviv). Each Region has several Availability Zones, which are physically separate data centers with their own power and networking, connected by fast links. An AZ can fail on its own, so for high availability you spread across at least two or three AZs: subnets in each AZ, an Auto Scaling group across them, a load balancer spanning them, and RDS Multi-AZ with a standby in another AZ. Multi-region is the next level, for disaster recovery or serving users worldwide, but it's much more complex because of data replication and cost.
+    explanation: "Many services are regional (S3 buckets, VPCs), some are global (IAM, Route 53, CloudFront)."
+
+  - id: aws-fund-002
+    type: mcq
+    subtopic: fundamentals
+    level: 1
+    prompt: In the shared responsibility model, which of these is the **customer's** responsibility on EC2?
+    options:
+      - "Patching the guest OS, configuring security groups and managing IAM/data encryption"
+      - "Physical security of data centers"
+      - "The hypervisor"
+      - "Network hardware"
+    correct: [0]
+    explanation: '"Security OF the cloud" (hardware, facilities, hypervisor) is AWS''s job; "security IN the cloud" (OS, apps, data, IAM, network config) is yours. With managed services like RDS or Lambda, AWS takes on more of it.'
+
+  # ---------- IAM ----------
+  - id: aws-iam-001
+    type: open
+    subtopic: iam
+    level: 1
+    tags: [il-common]
+    prompt: Explain IAM users, groups, roles and policies. Why prefer roles over access keys?
+    rubric:
+      keyPoints:
+        - { text: "User: an identity with long-term credentials (password/access keys) for a person or (legacy) app", weight: 2 }
+        - { text: "Group: a collection of users to attach policies to", weight: 1 }
+        - { text: "Role: an identity assumed temporarily by a trusted principal (EC2, Lambda, another account, a federated user, CI via OIDC); gives short-lived credentials", weight: 3 }
+        - { text: "Policy: JSON document allowing/denying actions on resources (with conditions); attached to identities or resources", weight: 3 }
+        - { text: "Roles avoid long-lived keys that can leak; credentials rotate automatically", weight: 2 }
+    modelAnswer: |
+      A **policy** is a JSON document that allows or denies actions on resources, for example `s3:GetObject` on one bucket, optionally with conditions. Policies attach to identities. A **user** is a long-term identity with a password and/or access keys; a **group** is just a way to attach policies to many users. A **role** has no permanent credentials: a trusted principal assumes it and gets temporary credentials. That could be an EC2 instance through its instance profile, a Lambda function, a pod via IRSA, a GitHub Actions job via OIDC, or a user from another account. Roles are preferred because there's no long-lived secret to leak or rotate. People should log in through SSO into roles, and workloads should use roles, never access keys baked into code.
+    explanation: "Policy evaluation: an explicit Deny always wins, then an explicit Allow, otherwise it's an implicit deny."
+
+  - id: aws-iam-002
+    type: mcq
+    subtopic: iam
+    level: 2
+    prompt: An IAM user has a policy allowing `s3:*` on all buckets, and also a policy with an explicit Deny for `s3:DeleteBucket`. Can they delete a bucket?
+    options: ["No: an explicit Deny always overrides any Allow", "Yes: Allow s3:* is broader", "Yes, if they're in the admin group", "It depends on the order the policies were attached"]
+    correct: [0]
+    explanation: "The default is deny, an Allow grants, and an explicit Deny beats everything (including in SCPs, permission boundaries and resource policies)."
+
+  - id: aws-iam-003
+    type: open
+    subtopic: iam
+    level: 2
+    prompt: An application on EC2 needs to read from one S3 bucket. How do you give it access securely?
+    rubric:
+      keyPoints:
+        - { text: "Create an IAM role with a trust policy for EC2 and attach it via an instance profile", weight: 3 }
+        - { text: "Least-privilege policy: only s3:GetObject (and ListBucket if needed) on that specific bucket ARN", weight: 3 }
+        - { text: "The SDK automatically gets temporary credentials from the instance metadata service (IMDSv2)", weight: 2 }
+        - { text: "No access keys in code, env vars or the AMI", weight: 2 }
+    modelAnswer: |
+      I'd create an IAM role whose trust policy lets EC2 assume it, attach it to the instance through an instance profile, and give it a least-privilege policy: `s3:GetObject` on `arn:aws:s3:::my-bucket/*`, plus `s3:ListBucket` on the bucket ARN if it needs to list. The AWS SDK on the instance automatically gets short-lived credentials from the instance metadata service, which should be IMDSv2-only, and they rotate by themselves. So there are no access keys in the code, config files, environment variables or AMI. On EKS the same idea is IRSA or EKS Pod Identity, per pod.
+    explanation: "Could also add a bucket policy restricting access to that role or a VPC endpoint, as defense in depth."
+
+  # ---------- VPC ----------
+  - id: aws-vpc-001
+    type: open
+    subtopic: vpc
+    level: 1
+    tags: [il-common]
+    prompt: What's the difference between a public and a private subnet in a VPC?
+    rubric:
+      keyPoints:
+        - { text: "A public subnet's route table has a route 0.0.0.0/0 to an Internet Gateway", weight: 3 }
+        - { text: "Resources there can have public IPs and be reachable from the internet (if SGs allow): load balancers, bastion, NAT gateway", weight: 2 }
+        - { text: "A private subnet has no route to the IGW; outbound internet goes through a NAT gateway in a public subnet", weight: 3 }
+        - { text: "Put app servers and databases in private subnets for security", weight: 2 }
+    modelAnswer: |
+      The difference is the route table. A public subnet has a route for `0.0.0.0/0` to the Internet Gateway, so instances with a public IP can be reached from the internet, subject to security groups. That's where load balancers, NAT gateways and maybe a bastion go. A private subnet has no route to the Internet Gateway, so nothing on the internet can reach its instances directly. If they need outbound access for updates or external APIs, their default route goes to a NAT gateway sitting in a public subnet. Application servers and especially databases belong in private subnets, with only the load balancer exposed.
+    explanation: "A typical layout: public + private (+ isolated DB) subnets in each of 3 AZs. VPC endpoints let private subnets reach S3 and other AWS APIs without NAT, which is cheaper and more secure."
+
+  - id: aws-vpc-002
+    type: open
+    subtopic: vpc
+    level: 2
+    tags: [il-common]
+    prompt: Compare Security Groups and Network ACLs.
+    rubric:
+      keyPoints:
+        - { text: "Security groups attach to instances/ENIs; NACLs attach to subnets", weight: 2 }
+        - { text: "SGs are stateful (return traffic allowed automatically); NACLs are stateless (must allow return/ephemeral ports explicitly)", weight: 3 }
+        - { text: "SGs only have allow rules; NACLs have allow and deny rules evaluated in number order", weight: 3 }
+        - { text: "SGs can reference other SGs as sources (e.g. DB allows app-SG on 5432)", weight: 2 }
+    modelAnswer: |
+      Security groups are virtual firewalls on each instance or network interface. They're stateful, so if inbound traffic is allowed the reply is automatically allowed, and they only have allow rules. A great feature is referencing other security groups: "the DB security group allows port 5432 from the app security group", without managing IPs. Network ACLs work at the subnet boundary, are stateless (you must allow the return traffic, the ephemeral ports 1024–65535, explicitly), and have numbered allow and deny rules evaluated in order. In practice, security groups do most of the work, and NACLs are an extra coarse layer, for example to block a malicious IP range for a whole subnet.
+    explanation: "A timeout to an EC2 instance? Check the SG, then the NACL, then the route table, then the OS firewall."
+
+  - id: aws-vpc-003
+    type: mcq
+    subtopic: vpc
+    level: 2
+    prompt: Instances in a private subnet can't download packages from the internet. Which is the most likely missing piece?
+    options:
+      - "A NAT gateway (in a public subnet) and a 0.0.0.0/0 route to it in the private subnet's route table"
+      - "An Internet Gateway attached directly to the private subnet"
+      - "A public IP on each instance"
+      - "A bigger instance type"
+    correct: [0]
+    explanation: "Private subnets reach the internet through NAT. For AWS services (S3, ECR, SSM), VPC endpoints avoid NAT data-processing charges."
+
+  - id: aws-vpc-004
+    type: mcq
+    subtopic: vpc
+    level: 3
+    prompt: Two VPCs (10.0.0.0/16 and 10.0.0.0/16) in different accounts need to communicate privately. What's the problem?
+    options:
+      - "Overlapping CIDRs: peering or Transit Gateway routing won't work; you need non-overlapping ranges (or NAT/PrivateLink)"
+      - "Peering never works across accounts"
+      - "They need public IPs"
+      - "There's no problem"
+    correct: [0]
+    explanation: "That's why you plan CIDRs up front (IPAM). PrivateLink can expose a single service without full routing between the networks."
+
+  # ---------- Compute ----------
+  - id: aws-comp-001
+    type: open
+    subtopic: compute
+    level: 1
+    prompt: How do an Auto Scaling Group and an Application Load Balancer work together to make a web app highly available?
+    rubric:
+      keyPoints:
+        - { text: "ASG keeps a desired number of EC2 instances (from a launch template) across multiple AZs; replaces unhealthy ones", weight: 3 }
+        - { text: "Scales out/in with policies (target tracking on CPU, request count…)", weight: 2 }
+        - { text: "ALB spreads requests across healthy instances in a target group, health-checks them", weight: 3 }
+        - { text: "ASG registers new instances in the target group automatically and can use LB health checks", weight: 2 }
+    modelAnswer: |
+      The Auto Scaling group launches instances from a launch template across several AZs and keeps the count between min and max: if an instance dies or fails health checks, it's replaced. With a target-tracking policy it adds instances when, say, average CPU or requests per target go above the target, and removes them when the load drops. The Application Load Balancer sits in front, in public subnets across the AZs. It health-checks the instances in its target group and only sends traffic to healthy ones. The ASG registers new instances in the target group automatically, and with ELB health checks enabled, an instance the load balancer considers unhealthy gets replaced. Losing an AZ or an instance doesn't take the site down.
+    explanation: The instances must be stateless (sessions in Redis or a DB, files in S3), because any instance can be terminated or replaced at any time.
+
+  - id: aws-comp-002
+    type: mcq
+    subtopic: compute
+    level: 2
+    prompt: When would you choose a Network Load Balancer (NLB) over an Application Load Balancer (ALB)?
+    options:
+      - "For non-HTTP TCP/UDP traffic, extreme performance/low latency, or when you need static IPs; ALB is for HTTP(S) with path/host routing"
+      - "When you need path-based routing"
+      - "When you want WAF integration"
+      - "Never; ALB does everything"
+    correct: [0]
+    explanation: "ALB works at L7 (HTTP/HTTPS/gRPC, host and path rules, WAF, OIDC auth). NLB works at L4 (TCP/UDP/TLS, static or Elastic IPs per AZ, preserves the source IP)."
+
+  - id: aws-comp-003
+    type: mcq
+    subtopic: compute
+    level: 2
+    prompt: Which EC2 purchasing option fits a stateless batch workload that can tolerate interruption, at the lowest cost?
+    options: ["Spot Instances", "On-Demand", "Dedicated Hosts", "Reserved Instances for one hour"]
+    correct: [0]
+    explanation: "Spot can be up to around 90% cheaper but can be reclaimed with a 2-minute warning. For steady baseline load, use Savings Plans or Reserved Instances; On-Demand for spiky, unpredictable load."
+
+  # ---------- Storage & DB ----------
+  - id: aws-stor-001
+    type: open
+    subtopic: storage-db
+    level: 1
+    tags: [il-common]
+    prompt: Compare S3, EBS and EFS. When would you use each?
+    rubric:
+      keyPoints:
+        - { text: "S3: object storage over HTTP API, virtually unlimited, highly durable; static files, backups, logs, data lake, artifacts", weight: 3 }
+        - { text: "EBS: block storage volume attached to one EC2 instance (in one AZ); OS disks, databases on EC2", weight: 3 }
+        - { text: "EFS: managed NFS file system mountable by many instances across AZs; shared files", weight: 3 }
+        - { text: "Cost/performance trade-offs (S3 cheapest per GB; EFS most expensive)", weight: 1 }
+    modelAnswer: |
+      **S3** is object storage: you put and get whole objects through an HTTP API, it scales without limit and is extremely durable. Use it for static assets, backups, logs, build artifacts and data lakes, with storage classes and lifecycle rules to cut cost. It's not a filesystem you mount for a database. **EBS** is a block device, a virtual disk attached to one EC2 instance in one AZ; it's for root volumes and databases running on EC2, and you back it up with snapshots. **EFS** is a managed NFS filesystem that many instances, even in different AZs, can mount at the same time, which is good for shared content. It's the most expensive per GB.
+    explanation: "In Kubernetes: EBS backs ReadWriteOnce PVCs, and EFS backs ReadWriteMany."
+
+  - id: aws-stor-002
+    type: open
+    subtopic: storage-db
+    level: 2
+    prompt: What's the difference between RDS Multi-AZ and read replicas?
+    rubric:
+      keyPoints:
+        - { text: "Multi-AZ: synchronous standby in another AZ for high availability / automatic failover; standby doesn't serve reads (classic)", weight: 3 }
+        - { text: "Read replicas: asynchronous copies for scaling read traffic (and can be cross-region)", weight: 3 }
+        - { text: "Replicas may lag; can be promoted manually for DR", weight: 2 }
+    modelAnswer: |
+      Multi-AZ is about availability. RDS keeps a synchronous standby copy in another AZ, and if the primary fails or during maintenance, it fails over automatically, with the DNS endpoint moving to the standby, usually in a minute or two. In the classic setup the standby doesn't serve traffic. Read replicas are about scale. They're asynchronous copies you point read-heavy queries at, and they can be in other regions. Because they're async they can lag a bit, and you can promote one manually, which is useful for cross-region disaster recovery. Many production setups use both.
+    explanation: "Aurora works differently: the storage is shared across AZs, and replicas double as failover targets."
+
+  - id: aws-stor-003
+    type: mcq
+    subtopic: storage-db
+    level: 2
+    prompt: How do you stop an S3 bucket from being accidentally made public?
+    options:
+      - "Enable S3 Block Public Access (account and bucket level) and use least-privilege bucket policies"
+      - "Use a long bucket name"
+      - "Enable versioning"
+      - "Put it in a private subnet"
+    correct: [0]
+    explanation: "Block Public Access is on by default for new buckets. Serve public content through CloudFront with Origin Access Control instead of a public bucket. S3 isn't in a subnet at all."
+
+  # ---------- Containers / serverless ----------
+  - id: aws-cont-001
+    type: open
+    subtopic: containers-serverless
+    level: 2
+    tags: [your-stack]
+    prompt: Compare EKS, ECS and Lambda for running a service. When would you pick each?
+    rubric:
+      keyPoints:
+        - { text: "EKS: managed Kubernetes control plane; portable, huge ecosystem (Helm, Argo CD), but more complexity/operational effort", weight: 3 }
+        - { text: "ECS: AWS-native container orchestrator, simpler, deep AWS integration; with Fargate no servers to manage", weight: 3 }
+        - { text: "Lambda: functions, event-driven, scales to zero, pay per request; limits on runtime (15 min), cold starts, not for long-running", weight: 3 }
+        - { text: "Choice depends on team skills, portability, traffic pattern, cost", weight: 1 }
+    modelAnswer: |
+      **EKS** is managed Kubernetes: AWS runs the control plane and you run the nodes, or Fargate. You get the whole Kubernetes ecosystem (Helm, Argo CD, operators) and portability across clouds, but there's real operational complexity and a per-cluster fee. **ECS** is AWS's own orchestrator. It's simpler, with fewer concepts and tight IAM and ALB integration, and with Fargate you don't manage servers at all. It's great for a small team that's all-in on AWS. **Lambda** runs functions in response to events like HTTP via API Gateway, S3 uploads or queues. It scales to zero and you pay per invocation, but executions are capped at 15 minutes and there are cold starts, so it fits spiky, event-driven work rather than steady long-running services.
+    explanation: "My course project uses Kubernetes (kind locally). On AWS the same Helm chart and Argo CD setup would run on EKS."
+
+  # ---------- Ops ----------
+  - id: aws-ops-001
+    type: mcq
+    subtopic: ops
+    level: 1
+    prompt: Which AWS service would you use to collect metrics and logs and to set alarms?
+    options: ["CloudWatch", "CloudTrail", "Config", "Inspector"]
+    correct: [0]
+    explanation: "CloudWatch is metrics, logs, alarms and dashboards. CloudTrail is the audit log of API calls (who did what). Config records resource configuration history and checks compliance. Inspector scans for vulnerabilities."
+
+  - id: aws-ops-002
+    type: mcq
+    subtopic: ops
+    level: 2
+    prompt: Someone deleted a security group rule in production. Where do you find out who did it and when?
+    options: ["CloudTrail", "CloudWatch Metrics", "VPC Flow Logs", "Trusted Advisor"]
+    correct: [0]
+    explanation: "CloudTrail records API calls with the identity, time and source IP. VPC Flow Logs record network traffic metadata, not configuration changes."
+
+  - id: aws-ops-003
+    type: open
+    subtopic: ops
+    level: 2
+    prompt: Your AWS bill suddenly doubled. How do you investigate and what are common causes?
+    rubric:
+      keyPoints:
+        - { text: "Cost Explorer: break down by service, region, usage type, tags to find what grew", weight: 3 }
+        - { text: "Common causes: forgotten/oversized instances, NAT gateway data processing, data transfer out, unattached EBS volumes/snapshots, logs retention, leaked keys running crypto miners", weight: 3 }
+        - { text: "Set up budgets/anomaly detection alerts and cost allocation tags to catch it earlier", weight: 2 }
+        - { text: "Fix: rightsizing, cleanup, Savings Plans/Spot, VPC endpoints, lifecycle policies", weight: 1 }
+    modelAnswer: |
+      I'd open Cost Explorer and group by service, then by usage type, region and cost-allocation tags, to find exactly what grew and when. Usual suspects: instances someone launched and forgot, or that are much too big; NAT gateway data-processing charges from heavy traffic to S3 or ECR (fixable with VPC endpoints); data transfer out; unattached EBS volumes and old snapshots; CloudWatch Logs with no retention; and in the worst case, leaked credentials running crypto-mining in an unused region, so I'd check CloudTrail if it's unexplained. To catch it next time: AWS Budgets alerts, Cost Anomaly Detection and consistent tagging. Then optimize: rightsizing, Spot and Savings Plans, and lifecycle policies.
+    explanation: "FinOps awareness is a plus for juniors. Mentioning NAT gateway costs shows real-world experience."
+
+  - id: aws-ops-004
+    type: mcq
+    subtopic: ops
+    level: 2
+    prompt: In Route 53, which record lets you point the zone apex (`example.com`) at an ALB?
+    options: ["An Alias A/AAAA record", "A CNAME at the apex", "An MX record", "A TXT record"]
+    correct: [0]
+    explanation: "CNAMEs aren't allowed at the zone apex. Route 53 Alias records resolve to AWS resources (ALB, CloudFront, S3 website) and are free to query. Routing policies: simple, weighted, latency, failover, geolocation."
+
+  # ---------- Added: basics ----------
+  - id: aws-fund-003
+    type: mcq
+    subtopic: fundamentals
+    level: 1
+    prompt: What is an AMI?
+    options:
+      - "Amazon Machine Image: a template (OS disk and settings) that EC2 instances are launched from"
+      - "An IAM permission type"
+      - "A monitoring agent"
+      - "A kind of load balancer"
+    correct: [0]
+    explanation: "AWS and vendors publish AMIs (Ubuntu, Amazon Linux), and you can build your own with your software pre-installed, e.g. with Packer. AMIs belong to a region."
+
+  - id: aws-fund-004
+    type: command
+    subtopic: fundamentals
+    level: 1
+    prompt: Check which AWS account and identity your AWS CLI is currently using.
+    answers: ["aws sts get-caller-identity"]
+    patterns: ['^aws sts get-caller-identity( --profile \S+)?$']
+    samples: ["aws sts get-caller-identity --profile prod"]
+    rejects: ["aws iam get-user", "aws whoami"]
+    explanation: "It prints the account ID, the user or role ARN and the user ID. Run it first whenever you get AccessDenied, or before anything risky, so you know you're in the right account."
+
+  - id: aws-iam-004
+    type: mcq
+    subtopic: iam
+    level: 1
+    prompt: What should you do with the AWS **root** user of an account?
+    options:
+      - "Turn on MFA, don't create access keys for it, and don't use it for daily work; use IAM Identity Center (SSO) or IAM roles instead"
+      - "Use it for daily work because it has all permissions"
+      - "Share its password with the team"
+      - "Delete it"
+    correct: [0]
+    explanation: "The root user can do anything, including closing the account, and policies can't limit it. Only a few tasks need it (like changing the support plan). Lock it away with MFA."
+
+  - id: aws-iam-005
+    type: mcq
+    subtopic: iam
+    level: 1
+    prompt: What does "least privilege" mean?
+    options:
+      - "Give each person or service only the permissions it needs for its job, and nothing more"
+      - "Give everyone read-only access"
+      - "Give admin access only on weekends"
+      - "Use as few IAM users as possible"
+    correct: [0]
+    explanation: "If a key or role with `AdministratorAccess` leaks, the attacker gets everything. If it only allows `s3:GetObject` on one bucket, the damage is small. IAM Access Analyzer can suggest tighter policies from what was actually used."
+
+  - id: aws-vpc-005
+    type: mcq
+    subtopic: vpc
+    level: 1
+    prompt: What is a VPC?
+    options:
+      - "Your own private, isolated network inside AWS, with its own IP range, subnets and routing"
+      - "A virtual server"
+      - "A VPN client"
+      - "A storage service"
+    correct: [0]
+    explanation: "You choose the CIDR (e.g. 10.0.0.0/16), split it into subnets in different AZs, and control traffic with route tables, security groups and NACLs. Every region has a default VPC, but real projects create their own."
+
+  - id: aws-vpc-006
+    type: mcq
+    subtopic: vpc
+    level: 1
+    prompt: What does an Internet Gateway (IGW) do?
+    options:
+      - "Connects a VPC to the internet; subnets with a route to it are public"
+      - "Lets private instances reach the internet without being reachable"
+      - "Connects two VPCs"
+      - "Filters traffic like a firewall"
+    correct: [0]
+    explanation: "One IGW per VPC. A subnet becomes public when its route table sends `0.0.0.0/0` to the IGW. Outbound-only access for private subnets is the NAT gateway's job."
+
+  - id: aws-comp-004
+    type: mcq
+    subtopic: compute
+    level: 1
+    prompt: An EC2 instance's public IP changed after you stopped and started it. How do you keep a fixed public IP?
+    options:
+      - "Allocate an Elastic IP and associate it with the instance (or better, put a load balancer or DNS name in front)"
+      - "Restart it instead of stopping it"
+      - "Use a bigger instance type"
+      - "Put it in a private subnet"
+    correct: [0]
+    explanation: "Normal public IPs are released on stop. An Elastic IP stays yours until you release it. Note that AWS charges for public IPv4 addresses. For web apps, clients should use a DNS name pointing at a load balancer, not an instance IP."
+
+  - id: aws-stor-004
+    type: command
+    subtopic: storage-db
+    level: 1
+    prompt: Upload the local file `backup.tar.gz` to the S3 bucket `my-backups`.
+    answers: ["aws s3 cp backup.tar.gz s3://my-backups/"]
+    patterns: ['^aws s3 cp backup\.tar\.gz s3://my-backups(/|/backup\.tar\.gz)?$']
+    samples: ["aws s3 cp backup.tar.gz s3://my-backups", "aws s3 cp backup.tar.gz s3://my-backups/backup.tar.gz"]
+    rejects: ["aws s3 cp s3://my-backups/ backup.tar.gz", "aws s3 ls s3://my-backups"]
+    explanation: "`aws s3 cp SOURCE DEST`, like `cp`. `aws s3 sync dir/ s3://bucket/dir/` copies only what changed. Add `--recursive` to copy a whole folder with `cp`."
+
+  - id: aws-stor-005
+    type: command
+    subtopic: storage-db
+    level: 1
+    prompt: List the objects in the S3 bucket `my-backups`.
+    answers: ["aws s3 ls s3://my-backups"]
+    patterns: ['^aws s3 ls s3://my-backups/?( --recursive)?( --human-readable)?$']
+    samples: ["aws s3 ls s3://my-backups/", "aws s3 ls s3://my-backups --recursive"]
+    rejects: ["aws s3 ls", "ls s3://my-backups"]
+    explanation: "`aws s3 ls` with no bucket lists your buckets. S3 has no real folders: `logs/2026/` is just a prefix of the object names."
+
+  - id: aws-stor-006
+    type: mcq
+    subtopic: storage-db
+    level: 1
+    prompt: What does turning on **versioning** on an S3 bucket protect you from?
+    options:
+      - "Accidental overwrites and deletes: old versions are kept and can be restored"
+      - "The bucket becoming public"
+      - "High costs"
+      - "Slow downloads"
+    correct: [0]
+    explanation: "With versioning, a delete only adds a delete marker, and an overwrite keeps the previous version. Old versions cost money, so add a lifecycle rule to expire them. Terraform state buckets should always have versioning on."
+
+  - id: aws-cont-002
+    type: mcq
+    subtopic: containers-serverless
+    level: 1
+    prompt: What is Amazon ECR?
+    options:
+      - "AWS's private container registry for Docker images"
+      - "A Kubernetes service"
+      - "A CI/CD service"
+      - "A database"
+    correct: [0]
+    explanation: "CI pushes images to ECR, and EKS, ECS or Lambda pull them using IAM permissions, so there's no separate registry password. Image scanning and lifecycle policies (delete old images) are built in."
+
+  - id: aws-ops-005
+    type: mcq
+    subtopic: ops
+    level: 1
+    prompt: What is a CloudWatch alarm?
+    options:
+      - "A rule that watches a metric (e.g. CPU > 80% for 5 minutes) and takes an action, like sending an SNS notification or scaling an ASG"
+      - "A log file"
+      - "A list of API calls"
+      - "A billing report"
+    correct: [0]
+    explanation: "An alarm has three states: OK, ALARM and INSUFFICIENT_DATA. Alarms can notify people (SNS to email, Slack or PagerDuty) or trigger automation like Auto Scaling."

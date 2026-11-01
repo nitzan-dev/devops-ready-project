@@ -1,0 +1,458 @@
+topic: cicd
+questions:
+  # ---------- Concepts ----------
+  - id: cicd-con-001
+    type: open
+    subtopic: concepts
+    level: 1
+    tags: [il-common]
+    prompt: Explain the difference between Continuous Integration, Continuous Delivery and Continuous Deployment.
+    rubric:
+      keyPoints:
+        - { text: "CI: developers merge to the main branch often; every change is automatically built and tested", weight: 3 }
+        - { text: "Continuous Delivery: every change that passes the pipeline is releasable, deployed to staging; production deploy is a manual approval/button", weight: 3 }
+        - { text: "Continuous Deployment: every change that passes all stages goes to production automatically, no human gate", weight: 3 }
+        - { text: "Goal: small, frequent, low-risk changes and fast feedback", weight: 1 }
+    modelAnswer: |
+      Continuous Integration means everyone merges small changes into the main branch often, and each change is automatically built and tested, so integration problems show up within minutes instead of at the end of a sprint. Continuous Delivery goes further: every change that passes the pipeline is packaged and deployable, usually auto-deployed to staging, and going to production is a business decision, one click or an approval. Continuous Deployment removes that last manual step: if all tests and checks pass, it goes to production automatically. That requires very good tests, monitoring and rollback.
+    explanation: "Both 'CD's rely on the same pipeline; the difference is only the manual gate before production."
+
+  - id: cicd-con-002
+    type: order
+    subtopic: concepts
+    level: 1
+    tags: [il-common]
+    prompt: Order the stages of a typical CI/CD pipeline for a containerized service.
+    steps:
+      - "Checkout code and install dependencies"
+      - "Lint and run unit tests"
+      - "Build the Docker image (tagged with the commit SHA)"
+      - "Scan the image and run integration tests"
+      - "Push the image to the registry"
+      - "Deploy to staging, then promote to production"
+    explanation: Fail fast. Cheap checks (lint, unit tests) run first, so you don't waste time building and pushing broken code. Build the artifact once and promote the same image through environments.
+
+  - id: cicd-con-003
+    type: mcq
+    subtopic: concepts
+    level: 2
+    prompt: Why is "build once, deploy many" (promote the same artifact through environments) a best practice?
+    options:
+      - "What you tested in staging is byte-for-byte what runs in production; rebuilding per environment can produce a different artifact"
+      - "It saves registry storage"
+      - "It's required by Kubernetes"
+      - "It makes builds faster"
+    correct: [0]
+    explanation: Rebuilding for production can pull different dependency versions or a different base image. Build once, tag it immutably (git SHA), and pass environment differences as configuration (env vars, Helm values), not as different builds.
+
+  - id: cicd-con-004
+    type: open
+    subtopic: concepts
+    level: 2
+    prompt: A CI pipeline takes 40 minutes and developers complain. How would you speed it up?
+    rubric:
+      keyPoints:
+        - { text: "Measure first: find the slowest stages", weight: 1 }
+        - { text: "Cache dependencies and Docker layers between runs", weight: 3 }
+        - { text: "Run independent jobs in parallel (tests split/matrix)", weight: 3 }
+        - { text: "Only run what changed (path filters, monorepo affected targets)", weight: 2 }
+        - { text: "Faster/bigger runners, fail fast ordering, move slow e2e tests to a later/nightly stage", weight: 2 }
+    modelAnswer: |
+      First measure which stages actually take the time. The usual wins: cache dependencies (npm, pip, Maven) and Docker build layers between runs; run independent jobs in parallel and split the test suite across several runners with a matrix; only run what's affected by the change, using path filters in a monorepo; put fast checks first so failures come back in a minute; and move the slow end-to-end suite to a later stage or a nightly run while keeping a smoke test on every PR. Sometimes bigger runners are simply cheaper than developer time. Flaky tests that cause reruns are worth fixing too.
+    explanation: Fast feedback is the whole point of CI. Teams often target under 10 minutes for the PR pipeline.
+
+  # ---------- GitHub Actions ----------
+  - id: cicd-gha-001
+    type: open
+    subtopic: github-actions
+    level: 1
+    tags: [your-stack]
+    prompt: 'Explain the structure of GitHub Actions: workflow, job, step, runner, and triggers.'
+    rubric:
+      keyPoints:
+        - { text: "Workflow: a YAML file in .github/workflows triggered by events (on: push, pull_request, schedule, workflow_dispatch, tags)", weight: 3 }
+        - { text: "Jobs: run in parallel by default on separate runners; needs: creates dependencies", weight: 3 }
+        - { text: "Steps: sequential commands (run:) or reusable actions (uses:) inside a job, sharing the workspace", weight: 2 }
+        - { text: "Runner: the machine that executes a job (GitHub-hosted or self-hosted)", weight: 2 }
+    modelAnswer: |
+      A workflow is a YAML file in `.github/workflows/`, triggered by events in `on:`, like `push`, `pull_request`, a cron `schedule`, a manual `workflow_dispatch` or a pushed tag. It contains jobs. Each job runs on its own fresh runner, a GitHub-hosted VM or your own self-hosted machine, and jobs run in parallel unless you chain them with `needs:`. A job is a list of steps that run in order on the same machine: either shell commands with `run:` or reusable actions with `uses:`, like `actions/checkout` or `docker/build-push-action`. Since jobs don't share a filesystem, you pass data between them with artifacts or outputs.
+    explanation: "In MyBroker, `ci.yml` runs lint, typecheck, tests and a Docker build on PRs, and `release.yml` builds and pushes the image to GHCR on tags."
+
+  - id: cicd-gha-002
+    type: mcq
+    subtopic: github-actions
+    level: 2
+    prompt: How should a GitHub Actions workflow authenticate to AWS to deploy, according to current best practice?
+    options:
+      - "OIDC: the workflow gets a short-lived token from GitHub and assumes an IAM role (no stored AWS keys)"
+      - "Store an IAM user's access key and secret in repository secrets"
+      - "Hard-code the keys in the workflow file"
+      - "Use the root account credentials"
+    correct: [0]
+    explanation: "With OIDC (`permissions: id-token: write` plus `aws-actions/configure-aws-credentials`), AWS trusts GitHub's identity token for a specific repo and branch, and gives temporary credentials. Nothing long-lived can leak."
+
+  - id: cicd-gha-003
+    type: mcq
+    subtopic: github-actions
+    level: 2
+    prompt: What does a `strategy.matrix` do in a GitHub Actions job?
+    options:
+      - "Runs the same job multiple times in parallel with different variable combinations (e.g. Node 20/22 × ubuntu/windows)"
+      - "Runs steps in random order"
+      - "Encrypts secrets"
+      - "Caches dependencies"
+    correct: [0]
+    explanation: 'Matrices are great for testing several versions or OSes, or for splitting tests into shards. `fail-fast: false` keeps the other combinations running when one fails.'
+
+  - id: cicd-gha-004
+    type: open
+    subtopic: github-actions
+    level: 2
+    prompt: How do you handle secrets in GitHub Actions, and what are the risks with pull requests from forks?
+    rubric:
+      keyPoints:
+        - { text: "Store them as repository/environment/organization secrets, referenced via ${{ secrets.X }}; they're masked in logs", weight: 3 }
+        - { text: "Environments can require approvals and restrict secrets to certain branches", weight: 2 }
+        - { text: "Workflows triggered by pull_request from forks don't get secrets (by design), because the PR code is untrusted", weight: 2 }
+        - { text: "pull_request_target runs with secrets in the base repo context; checking out and running fork code there is dangerous", weight: 2 }
+        - { text: "Least-privilege GITHUB_TOKEN permissions; prefer OIDC over long-lived keys", weight: 1 }
+    modelAnswer: |
+      Secrets go into repository, organization or environment secrets and are used as `${{ secrets.NAME }}`. GitHub masks them in logs. Environment secrets plus required reviewers let you gate production deploys. The main risk is untrusted code: a PR from a fork could modify the workflow or tests to print or send secrets. That's why `pull_request` workflows from forks don't receive secrets. `pull_request_target` does run with secrets, so checking out and running the fork's code in it is a known way to leak them. I'd also set minimal `permissions:` for the `GITHUB_TOKEN`, pin third-party actions to a commit SHA, and use OIDC instead of stored cloud keys.
+    explanation: "Third-party actions run with your token and secrets. Pinning by SHA protects against a compromised tag."
+
+  - id: cicd-gha-005
+    type: mcq
+    subtopic: github-actions
+    level: 1
+    prompt: "Which trigger runs a workflow when a tag like `v1.2.0` is pushed?"
+    options:
+      - "`on: push: tags: ['v*']`"
+      - "`on: release_tag`"
+      - "`on: pull_request: tags`"
+      - "`on: schedule: tags`"
+    correct: [0]
+    explanation: Tag-triggered release workflows are common. Build, tag the image with the version, push, and create a GitHub release.
+
+  # ---------- Jenkins ----------
+  - id: cicd-jenkins-001
+    type: open
+    subtopic: jenkins
+    level: 1
+    tags: [il-common]
+    prompt: What is a Jenkinsfile, and what's the difference between declarative and scripted pipelines?
+    rubric:
+      keyPoints:
+        - { text: "A Jenkinsfile defines the pipeline as code, stored in the repo with the application", weight: 3 }
+        - { text: "Declarative: structured, opinionated syntax (pipeline { agent, stages, steps, post })", weight: 3 }
+        - { text: "Scripted: full Groovy, more flexible but harder to read/maintain", weight: 2 }
+        - { text: "Pipeline as code gives versioning, review and reproducibility", weight: 1 }
+    modelAnswer: |
+      A Jenkinsfile is "pipeline as code": the pipeline definition lives in the repository next to the app, so it's versioned and reviewed like any other code. There are two syntaxes. **Declarative** is the structured one: a `pipeline {}` block with `agent`, `stages`, `steps`, `environment`, `when` conditions and `post` actions like always or failure. It's easier to read and validate, and it's the recommended default. **Scripted** is plain Groovy inside `node {}` blocks. It's more flexible, with loops and complex logic, but harder to maintain. Shared logic usually goes into Shared Libraries.
+    explanation: "Jenkins is still very common in Israeli companies, often with agents running as Kubernetes pods."
+
+  - id: cicd-jenkins-002
+    type: open
+    subtopic: jenkins
+    level: 2
+    tags: [il-common]
+    prompt: Compare Jenkins with GitHub Actions. When would you choose each?
+    rubric:
+      keyPoints:
+        - { text: "Jenkins: self-hosted, you run and maintain the controller, agents, plugins, upgrades, security", weight: 3 }
+        - { text: "Jenkins: very flexible, huge plugin ecosystem, works with any SCM, good for on-prem / complex legacy pipelines", weight: 2 }
+        - { text: "GitHub Actions: SaaS, tightly integrated with GitHub (PRs, checks, marketplace), YAML, hosted runners, little maintenance", weight: 3 }
+        - { text: "Trade-offs: cost at scale, data residency/on-prem needs, plugin security issues vs vendor lock-in", weight: 2 }
+    modelAnswer: |
+      Jenkins is self-hosted: you run the controller and agents, manage plugins and upgrades, and secure it. In exchange it's extremely flexible, works with any source control, and runs on-prem where code can't leave the network. Many companies have years of Jenkins pipelines. GitHub Actions is a managed service built into GitHub: workflows are YAML in the repo, it integrates natively with PRs and checks, has a big marketplace of actions, and hosted runners mean almost no maintenance. You can still add self-hosted runners. For a new project already on GitHub I'd pick Actions. For on-prem requirements, non-GitHub source control, or a large existing Jenkins setup, Jenkins makes sense. The usual Jenkins pain points are plugin sprawl and plugin vulnerabilities.
+    explanation: "Others you may hear about: GitLab CI (similar to Actions, for GitLab), CircleCI, Azure DevOps, and Argo Workflows/Tekton (Kubernetes-native)."
+
+  - id: cicd-jenkins-003
+    type: mcq
+    subtopic: jenkins
+    level: 2
+    prompt: In Jenkins, what's the difference between the controller and agents?
+    options:
+      - "The controller schedules jobs, stores config and serves the UI; agents execute the builds. Running builds on the controller is discouraged"
+      - "Agents are plugins"
+      - "The controller runs builds; agents only store logs"
+      - "They are the same process"
+    correct: [0]
+    explanation: Builds on the controller are a security and stability risk, because a build could read Jenkins secrets or exhaust the server. Use static or ephemeral agents, for example the Kubernetes plugin spinning up a pod per build.
+
+  # ---------- Deployment strategies ----------
+  - id: cicd-deploy-001
+    type: open
+    subtopic: deploy-strategies
+    level: 1
+    tags: [il-common]
+    prompt: Explain rolling, blue/green and canary deployments, with a pro and con of each.
+    rubric:
+      keyPoints:
+        - { text: "Rolling: replace instances gradually; no extra infra, but two versions run at once and rollback is gradual", weight: 3 }
+        - { text: "Blue/green: deploy the new version to a full parallel environment, then switch traffic at once; instant rollback, but double resources", weight: 3 }
+        - { text: "Canary: send a small % of traffic to the new version, watch metrics, increase gradually; limits blast radius, needs good monitoring/traffic splitting", weight: 3 }
+        - { text: "Mentions feature flags or automated analysis/rollback (e.g. Argo Rollouts)", weight: 1 }
+    modelAnswer: |
+      **Rolling**: replace old instances with new ones a few at a time. It's Kubernetes' default and needs no extra capacity, but for a while both versions serve traffic (so they must be compatible), and rolling back means rolling again. **Blue/green**: run the new version (green) next to the current one (blue) at full size, test it, then switch all traffic at once at the load balancer. Rollback is an instant switch back, but you pay for double capacity during the switch, and databases need care. **Canary**: release the new version to a small slice of traffic, say 5%, compare error rates and latency with the old version, then increase step by step. It limits the blast radius of a bad release but needs traffic splitting and good metrics, often automated with Argo Rollouts or Flagger.
+    explanation: "Feature flags separate deploying code from releasing a feature, which complements all three strategies."
+
+  - id: cicd-deploy-002
+    type: mcq
+    subtopic: deploy-strategies
+    level: 2
+    prompt: "Your new version adds a database column and renames another. Why is that dangerous with a rolling update, and what's the safe approach?"
+    options:
+      - "Old and new versions run at the same time against the same DB; use backward-compatible (expand/contract) migrations: add first, migrate, remove the old column in a later release"
+      - "Rolling updates can't run migrations at all"
+      - "It's only dangerous with blue/green"
+      - "Renaming columns is always safe"
+    correct: [0]
+    explanation: Expand/contract (also called parallel change) keeps every deploy backward compatible, so you can roll forward and back safely.
+
+  - id: cicd-deploy-003
+    type: open
+    subtopic: deploy-strategies
+    level: 2
+    prompt: A deploy went out and error rates jumped. Walk through what you do.
+    rubric:
+      keyPoints:
+        - { text: "Correlate: confirm the spike started with the deploy (dashboards, deploy markers)", weight: 2 }
+        - { text: "Mitigate first: roll back (or disable the feature flag) rather than debugging in production", weight: 3 }
+        - { text: "Communicate: tell the team/incident channel, follow the incident process", weight: 2 }
+        - { text: "After recovery: find the root cause from logs/diff, add a test or check, blameless postmortem", weight: 2 }
+        - { text: "Improve the pipeline: canary/automated rollback on error metrics", weight: 1 }
+    modelAnswer: |
+      First I confirm it's the deploy: does the error spike line up with the deploy time on the dashboards, and does it affect the new version's pods? If yes, I mitigate first and debug later, so I roll back to the previous version (`kubectl rollout undo`, revert the GitOps commit, or flip off the feature flag), and announce it in the team or incident channel. Once errors are back to normal, I find the root cause from logs and the diff, fix it, and add a test that would have caught it. Then a short blameless postmortem, and maybe pipeline improvements such as a canary stage with automatic rollback when the error rate rises.
+    explanation: '"Rollback first" is the answer interviewers want. Restoring service beats finding the cause during an incident.'
+
+  # ---------- Pipeline security ----------
+  - id: cicd-sec-001
+    type: mcq
+    subtopic: pipeline-security
+    level: 1
+    prompt: "Which of these belong in a secure CI pipeline? (Select all.)"
+    options:
+      - "Secret scanning to catch leaked keys (e.g. gitleaks)"
+      - "Dependency and container image vulnerability scanning (e.g. Trivy)"
+      - "Least-privilege credentials, ideally short-lived (OIDC)"
+      - "Printing environment variables to the log for debugging"
+    correct: [0, 1, 2]
+    explanation: "Shift left: catch problems in the pipeline, not in production. Never print secrets. Masking isn't perfect (base64 or split strings get past it)."
+
+  - id: cicd-sec-002
+    type: open
+    subtopic: pipeline-security
+    level: 2
+    prompt: A developer accidentally pushed an AWS access key to a public GitHub repo. What do you do?
+    rubric:
+      keyPoints:
+        - { text: "Immediately revoke/deactivate the key (rotate), since it must be considered compromised even if deleted from Git", weight: 3 }
+        - { text: "Check CloudTrail/billing for any usage by attackers and contain it", weight: 3 }
+        - { text: "Removing it from history (git filter-repo/BFG) is secondary; it's already been scraped", weight: 2 }
+        - { text: "Prevent recurrence: pre-commit/CI secret scanning, push protection, OIDC/roles instead of static keys", weight: 2 }
+    modelAnswer: |
+      Treat the key as compromised right away. Bots scan GitHub for keys within minutes. Step one is to deactivate and delete the key in IAM and issue a new one if it's really needed. Then check CloudTrail for what that key did, and look for surprise resources like crypto-mining instances in any region, plus billing anomalies; clean those up and follow the incident process. Rewriting Git history with git filter-repo or BFG is good hygiene but doesn't undo the exposure. Then prevent it happening again: GitHub push protection and secret scanning, gitleaks in pre-commit and CI, and ideally no long-lived keys at all, using IAM roles and OIDC instead.
+    explanation: Rotate first and clean up after. Deleting the commit isn't a fix.
+
+  # ---------- Artifacts ----------
+  - id: cicd-art-001
+    type: mcq
+    subtopic: artifacts
+    level: 1
+    prompt: What's the best way to tag a Docker image built by CI so you always know what code it contains?
+    options:
+      - "With the git commit SHA (and a semantic version for releases)"
+      - "Always `latest`"
+      - "With the build date only"
+      - "With the developer's name"
+    correct: [0]
+    explanation: "A SHA tag maps the image to the exact commit. Add a semver tag on releases. Avoid mutable tags like `latest` for deployments."
+
+  - id: cicd-art-002
+    type: open
+    subtopic: artifacts
+    level: 2
+    prompt: What is semantic versioning, and how does it help deployments?
+    rubric:
+      keyPoints:
+        - { text: "MAJOR.MINOR.PATCH", weight: 2 }
+        - { text: "MAJOR for breaking changes, MINOR for backward-compatible features, PATCH for backward-compatible fixes", weight: 3 }
+        - { text: "Communicates the risk of an upgrade; lets consumers pin ranges", weight: 2 }
+        - { text: "Can be automated from commit messages (conventional commits) in the release pipeline", weight: 1 }
+    modelAnswer: |
+      Semantic versioning is MAJOR.MINOR.PATCH. You bump PATCH for backward-compatible bug fixes, MINOR for new backward-compatible features, and MAJOR when you break compatibility. That way the version itself tells consumers how risky an upgrade is: 1.4.2 to 1.4.3 should be safe, 1.x to 2.0 needs attention. Dependency managers and Helm chart dependencies can then pin safe ranges like `^1.4`. In CI you can automate it with conventional commits (`feat:`, `fix:`, `feat!:`) and a release tool that bumps the version, tags the repo and builds the matching image.
+    explanation: "Helm charts carry two versions: `version` (the chart) and `appVersion` (the app inside)."
+
+  # ---------- Added: basics ----------
+  - id: cicd-con-005
+    type: mcq
+    subtopic: concepts
+    level: 1
+    prompt: In CI/CD, what is a "pipeline"?
+    options:
+      - "An automated series of steps (build, test, scan, deploy) that runs on every change"
+      - "A network cable between servers"
+      - "A Git branch used for releases"
+      - "A list of tickets for the sprint"
+    correct: [0]
+    explanation: "Each stage must pass before the next one runs. If a stage fails, the pipeline stops and the change doesn't move on. The pipeline itself is defined as code in the repo (a workflow YAML or a Jenkinsfile)."
+
+  - id: cicd-con-006
+    type: mcq
+    subtopic: concepts
+    level: 1
+    prompt: Why run the build and tests on every pull request, before merging?
+    options:
+      - "To catch problems before they reach the main branch, while the change is small and fresh in the author's head"
+      - "Because Git requires it"
+      - "To make the pull request take longer"
+      - "So the reviewer doesn't need to read the code"
+    correct: [0]
+    explanation: "Branch protection can require the checks to pass before merging, so main stays green. Automated checks don't replace code review; they free the reviewer to think about design and logic."
+
+  - id: cicd-con-007
+    type: mcq
+    subtopic: concepts
+    level: 1
+    prompt: The pipeline on `main` is red (failing). What should the team do?
+    options:
+      - "Fix it or revert the breaking commit right away; a broken main blocks everyone"
+      - "Keep merging; it will be fixed at the end of the sprint"
+      - "Disable the failing tests so it turns green"
+      - "Delete the pipeline"
+    correct: [0]
+    explanation: "A red main means nobody can trust a merge or a release. The usual rule: whoever broke it fixes it now, or reverts. Skipping or deleting tests just hides the problem."
+
+  - id: cicd-gha-006
+    type: mcq
+    subtopic: github-actions
+    level: 1
+    prompt: Where do GitHub Actions workflow files live in a repository?
+    options: ["`.github/workflows/*.yml`", "`/etc/github/actions`", "`workflows.json` in the repo root", "In the GitHub web settings only"]
+    correct: [0]
+    explanation: "Each YAML file there is a separate workflow. Because they live in the repo, changes to the pipeline go through pull requests and review like any other code."
+
+  - id: cicd-gha-007
+    type: mcq
+    subtopic: github-actions
+    level: 1
+    prompt: "In a workflow, the `deploy` job has `needs: test`. What does that do?"
+    options:
+      - "`deploy` waits for `test` to finish, and runs only if `test` succeeded"
+      - "`deploy` and `test` run at the same time"
+      - "`deploy` runs only if `test` fails"
+      - "`test` is skipped"
+    correct: [0]
+    explanation: "Jobs run in parallel by default. `needs:` creates an order between them. A job can need several jobs: `needs: [lint, test]`."
+
+  - id: cicd-gha-008
+    type: mcq
+    subtopic: github-actions
+    level: 1
+    prompt: "Why do most jobs start with `uses: actions/checkout@v4`?"
+    options:
+      - "Each job runs on a fresh runner with no code on it; checkout clones the repository into the workspace"
+      - "It checks that the workflow file is valid"
+      - "It logs in to GitHub"
+      - "It checks out a new branch for the release"
+    correct: [0]
+    explanation: "Runners start empty. Without checkout, steps like `npm test` have no code to run. `uses:` runs a ready-made action; `run:` runs a shell command."
+
+  - id: cicd-gha-009
+    type: mcq
+    subtopic: github-actions
+    level: 2
+    prompt: The `build` job creates a `dist/` folder, and the `deploy` job needs it. How do you pass it?
+    options:
+      - "Upload it with `actions/upload-artifact` in `build`, and download it with `actions/download-artifact` in `deploy`"
+      - "It's already there, because all jobs share one disk"
+      - "Commit `dist/` to the repository from the pipeline"
+      - "Save it in an environment variable"
+    correct: [0]
+    explanation: "Each job runs on its own runner, so files don't carry over. Artifacts pass files between jobs and can be downloaded from the run page. Small values pass through job `outputs`."
+
+  - id: cicd-gha-010
+    type: open
+    subtopic: github-actions
+    level: 2
+    tags: [your-stack]
+    prompt: Describe a GitHub Actions workflow for a Node.js service that tests every pull request and, on merge to main, builds and pushes a Docker image.
+    rubric:
+      keyPoints:
+        - { text: "Triggers: on pull_request, and on push to main", weight: 2 }
+        - { text: "A test job: checkout, setup-node with dependency caching, install, lint, test", weight: 3 }
+        - { text: "A build job that needs the test job; image tagged with the commit SHA", weight: 2 }
+        - { text: "Push only on main (an if: condition), logging in to the registry with GITHUB_TOKEN or a secret", weight: 2 }
+        - { text: "Minimal permissions (e.g. contents: read, packages: write)", weight: 1 }
+    modelAnswer: |
+      Triggers: `on: pull_request` and `on: push: branches: [main]`.
+      A **test** job: `actions/checkout`, `actions/setup-node` with `cache: npm`, then `npm ci`, lint and `npm test`.
+      A **build** job with `needs: test`. It builds the image with `docker/build-push-action`, tagged with `${{ github.sha }}`.
+      The push happens only on main: `if: github.ref == 'refs/heads/main'`, after `docker/login-action` logs in to GHCR with `GITHUB_TOKEN`. On pull requests it only builds, to check that the Dockerfile works.
+      I'd set minimal `permissions:` (contents: read, packages: write) and use the Docker layer cache to keep it fast.
+    explanation: "This is close to MyBroker's `ci.yml` and `release.yml`. Be ready to describe your own pipeline line by line."
+
+  - id: cicd-jenkins-004
+    type: mcq
+    subtopic: jenkins
+    level: 1
+    prompt: What's the better way to make Jenkins start a build when code is pushed?
+    options:
+      - "A webhook from the Git server, which tells Jenkins about the push right away"
+      - "Polling the repository every minute"
+      - "Asking developers to click Build"
+      - "A cron job that restarts Jenkins"
+    correct: [0]
+    explanation: "Polling (\"Poll SCM\") works but is slow and adds load. With a webhook, GitHub or GitLab sends an HTTP request to Jenkins on every push, so the build starts in seconds."
+
+  - id: cicd-deploy-004
+    type: mcq
+    subtopic: deploy-strategies
+    level: 1
+    prompt: What is a feature flag?
+    options:
+      - "A switch in configuration that turns a feature on or off without deploying new code"
+      - "A Git tag that marks a release"
+      - "A label on a pull request"
+      - "A Kubernetes annotation"
+    correct: [0]
+    explanation: "You can deploy code with the feature switched off, then turn it on for 5% of users, and turn it off instantly if something breaks. That separates \"deploy\" from \"release\"."
+
+  - id: cicd-deploy-005
+    type: mcq
+    subtopic: deploy-strategies
+    level: 1
+    prompt: Why do teams have a **staging** environment between development and production?
+    options:
+      - "To test the release in a production-like setup before real users see it"
+      - "To store backups of production"
+      - "To give developers somewhere to write code"
+      - "Because Kubernetes needs three namespaces"
+    correct: [0]
+    explanation: "Staging should be as close to production as possible (same image, same kind of config and infrastructure, smaller size). The same image moves from staging to production, only the config changes."
+
+  - id: cicd-art-003
+    type: mcq
+    subtopic: artifacts
+    level: 1
+    prompt: What is a container registry?
+    options:
+      - "A service that stores and serves Docker images, like Docker Hub, GHCR or Amazon ECR"
+      - "A list of running containers on a server"
+      - "The Kubernetes database"
+      - "A tool that builds Dockerfiles"
+    correct: [0]
+    explanation: "CI pushes the image to the registry, and servers or Kubernetes pull it from there. Private registries need credentials to pull (in Kubernetes, an `imagePullSecret`)."
+
+  - id: cicd-art-004
+    type: mcq
+    subtopic: artifacts
+    level: 2
+    prompt: How does dependency caching usually work in CI, for example for `node_modules`?
+    options:
+      - "The cache key includes a hash of the lockfile, so the cache is reused until dependencies change"
+      - "The cache is shared with production servers"
+      - "Dependencies are downloaded once and never updated"
+      - "Caching is only possible on self-hosted runners"
+    correct: [0]
+    explanation: "Example key: `npm-${{ hashFiles('package-lock.json') }}`. When the lockfile changes the key changes and the cache is rebuilt. Most setup actions (`setup-node`, `setup-python`) have a `cache:` option that does this for you."

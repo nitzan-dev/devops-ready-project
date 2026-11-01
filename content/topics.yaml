@@ -1,0 +1,216 @@
+# Topic taxonomy. Core topics count double toward readiness.
+topics:
+  - id: linux
+    title: Linux fundamentals
+    he: "יסודות Linux"
+    short: Linux
+    core: true
+    description: The OS every server runs. Interviewers start here and go deep.
+    subtopics:
+      - { id: fhs-files, title: "Filesystem & files" }
+      - { id: permissions, title: "Permissions & ownership", weight: 1.5 }
+      - { id: users, title: "Users, groups & sudo" }
+      - { id: processes, title: "Processes & signals", weight: 1.5 }
+      - { id: performance, title: "Load, CPU & memory", weight: 1.5 }
+      - { id: systemd, title: "systemd & logs" }
+      - { id: disks, title: "Disks, mounts & inodes" }
+      - { id: packages, title: "Package management", weight: 0.5 }
+      - { id: ssh, title: "SSH & keys" }
+      - { id: boot, title: "Boot process & kernel", weight: 0.5 }
+      - { id: scheduling, title: "cron & scheduling", weight: 0.5 }
+
+  - id: bash
+    title: Bash & shell scripting
+    he: "Bash וסקריפטים"
+    short: Bash
+    core: true
+    description: Pipes, scripts and the text tools you'll use every day.
+    subtopics:
+      - { id: redirection, title: "Pipes & redirection" }
+      - { id: scripting, title: "Scripting basics", weight: 1.5 }
+      - { id: text-tools, title: "grep, sed, awk & friends", weight: 1.5 }
+      - { id: one-liners, title: "Practical one-liners" }
+
+  - id: networking
+    title: Networking
+    he: "רשתות"
+    short: Network
+    core: true
+    description: The topic juniors fail most. DNS, TCP, HTTP, subnets and debugging connectivity.
+    subtopics:
+      - { id: models, title: "OSI & TCP/IP models" }
+      - { id: tcp-udp, title: "TCP, UDP & ports", weight: 1.5 }
+      - { id: dns, title: "DNS", weight: 1.5 }
+      - { id: http, title: "HTTP, HTTPS & TLS", weight: 1.5 }
+      - { id: ip-subnetting, title: "IP, CIDR & subnetting", weight: 1.5 }
+      - { id: routing-nat, title: "Routing, NAT & firewalls" }
+      - { id: load-balancing, title: "Load balancers & proxies" }
+      - { id: troubleshooting, title: "Network troubleshooting", weight: 1.5 }
+      - { id: url-flow, title: "What happens when you type a URL" }
+
+  - id: git
+    title: Git
+    he: "Git"
+    short: Git
+    description: Version control fundamentals and team workflows.
+    subtopics:
+      - { id: basics, title: "Core concepts" }
+      - { id: branching, title: "Branching & merging" }
+      - { id: undo, title: "Undoing changes" }
+      - { id: workflow, title: "Team workflow" }
+
+  - id: cicd
+    title: CI/CD
+    he: "CI/CD"
+    short: CI/CD
+    core: true
+    description: Pipelines, GitHub Actions, Jenkins and how code gets to production safely.
+    subtopics:
+      - { id: concepts, title: "CI/CD concepts", weight: 1.5 }
+      - { id: github-actions, title: "GitHub Actions", weight: 1.5 }
+      - { id: jenkins, title: "Jenkins" }
+      - { id: deploy-strategies, title: "Deployment strategies", weight: 1.5 }
+      - { id: pipeline-security, title: "Secrets & pipeline security" }
+      - { id: artifacts, title: "Artifacts, caching & versioning" }
+
+  - id: docker
+    title: Docker & containers
+    he: "Docker וקונטיינרים"
+    short: Docker
+    core: true
+    description: Images, Dockerfiles, runtime, storage and networking.
+    subtopics:
+      - { id: fundamentals, title: "Containers vs VMs & internals", weight: 1.5 }
+      - { id: images, title: "Images & layers" }
+      - { id: dockerfile, title: "Dockerfile best practices", weight: 1.5 }
+      - { id: runtime, title: "Running & debugging containers" }
+      - { id: storage-networking, title: "Volumes & networking" }
+      - { id: compose, title: "Docker Compose" }
+      - { id: registries, title: "Registries & tagging", weight: 0.5 }
+
+  - id: kubernetes
+    title: Kubernetes
+    he: "Kubernetes"
+    short: K8s
+    core: true
+    description: Architecture, workloads, networking, config, scaling and troubleshooting.
+    subtopics:
+      - { id: architecture, title: "Architecture", weight: 1.5 }
+      - { id: workloads, title: "Pods & workloads", weight: 1.5 }
+      - { id: services, title: "Services & cluster networking", weight: 1.5 }
+      - { id: ingress, title: "Ingress" }
+      - { id: config, title: "ConfigMaps & Secrets" }
+      - { id: probes, title: "Health probes" }
+      - { id: resources, title: "Requests, limits & QoS" }
+      - { id: scaling, title: "Scaling & HPA" }
+      - { id: storage, title: "Storage" }
+      - { id: rbac-security, title: "RBAC & NetworkPolicy" }
+      - { id: scheduling, title: "Scheduling, taints & affinity", weight: 0.5 }
+      - { id: deployments, title: "Rollouts & rollbacks" }
+      - { id: troubleshooting, title: "Troubleshooting pods", weight: 1.5 }
+      - { id: kubectl, title: "kubectl essentials" }
+
+  - id: helm
+    title: Helm
+    he: "Helm"
+    short: Helm
+    description: Packaging and releasing apps on Kubernetes.
+    subtopics:
+      - { id: basics, title: "Charts & releases" }
+      - { id: templating, title: "Values & templating" }
+      - { id: operations, title: "Upgrade, rollback & debugging" }
+
+  - id: gitops
+    title: GitOps & Argo CD
+    he: "GitOps ו-Argo CD"
+    short: GitOps
+    description: Git as the source of truth, with a controller that keeps the cluster in sync.
+    subtopics:
+      - { id: principles, title: "GitOps principles" }
+      - { id: argocd, title: "Argo CD" }
+
+  - id: terraform
+    title: Terraform & IaC
+    he: "Terraform ו-IaC"
+    short: Terraform
+    core: true
+    description: Infrastructure as code with Terraform, plus Ansible basics.
+    subtopics:
+      - { id: iac-concepts, title: "IaC concepts & comparisons" }
+      - { id: basics, title: "Core concepts & workflow", weight: 1.5 }
+      - { id: state, title: "State & backends", weight: 1.5 }
+      - { id: modules-vars, title: "Variables, outputs & modules" }
+      - { id: advanced, title: "count, for_each, lifecycle & import" }
+      - { id: ansible, title: "Ansible" }
+
+  - id: aws
+    title: Cloud (AWS)
+    he: "ענן (AWS)"
+    short: AWS
+    core: true
+    description: The AWS services every junior is expected to know.
+    subtopics:
+      - { id: fundamentals, title: "Regions, AZs & shared responsibility" }
+      - { id: iam, title: "IAM", weight: 1.5 }
+      - { id: vpc, title: "VPC networking", weight: 1.5 }
+      - { id: compute, title: "EC2, Auto Scaling & load balancers" }
+      - { id: storage-db, title: "S3, EBS & RDS" }
+      - { id: containers-serverless, title: "EKS, ECS & Lambda" }
+      - { id: ops, title: "CloudWatch, Route 53 & cost" }
+
+  - id: observability
+    title: Observability
+    he: "ניטור ו-Observability"
+    short: Observ.
+    core: true
+    description: Metrics, logs, traces, Prometheus, Grafana, alerting and SLOs.
+    subtopics:
+      - { id: pillars, title: "Metrics, logs & traces" }
+      - { id: prometheus, title: "Prometheus & PromQL", weight: 1.5 }
+      - { id: grafana-alerting, title: "Grafana & alerting" }
+      - { id: slos, title: "SLI, SLO, SLA & error budgets" }
+      - { id: logging, title: "Logging stacks" }
+
+  - id: security
+    title: Security & DevSecOps
+    he: "אבטחה ו-DevSecOps"
+    short: Security
+    description: Secrets, least privilege, scanning and the supply chain.
+    subtopics:
+      - { id: secrets, title: "Secrets management", weight: 1.5 }
+      - { id: least-privilege, title: "Least privilege & access" }
+      - { id: supply-chain, title: "Scanning & supply chain" }
+      - { id: tls, title: "TLS & certificates" }
+      - { id: hardening, title: "Hardening basics" }
+
+  - id: sre
+    title: Reliability & system design
+    he: "אמינות ותכנון מערכות"
+    short: SRE
+    description: Availability, scaling, databases, incidents and simple system design.
+    subtopics:
+      - { id: availability, title: "Availability & scaling" }
+      - { id: databases, title: "Databases, caching & queues" }
+      - { id: incidents, title: "Incidents & postmortems" }
+      - { id: design, title: "System design basics" }
+      - { id: dr, title: "Backups & disaster recovery" }
+
+  - id: project
+    title: Your project (MyBroker)
+    he: "הפרויקט שלך (MyBroker)"
+    short: Project
+    core: true
+    description: Talk about your own course project with confidence. Interviewers always ask.
+    subtopics:
+      - { id: architecture, title: "Architecture walkthrough" }
+      - { id: pipeline, title: "CI/CD & GitOps flow" }
+      - { id: operations, title: "Observability, security & lessons" }
+
+  - id: behavioral
+    title: Behavioral (English)
+    he: "ראיון אישי (באנגלית)"
+    short: Behavioral
+    description: The non-technical round. STAR-structured answers, in English.
+    subtopics:
+      - { id: intro, title: "About you & motivation" }
+      - { id: stories, title: "STAR stories" }

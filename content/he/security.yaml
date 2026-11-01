@@ -1,0 +1,311 @@
+topic: security
+questions:
+  sec-secrets-001:
+    prompt: איפה צריך לשמור סודות של אפליקציה (סיסמאות למסד נתונים, מפתחות API), ואיפה אסור שהם יהיו?
+    keyPoints:
+      - "אף פעם לא בקוד, בהיסטוריה של Git, בתוך Docker images, או בלוגים של CI"
+      - "בכספת סודות (Vault, AWS Secrets Manager, SSM Parameter Store) עם בקרת גישה ותיעוד של כל גישה"
+      - "מזריקים אותם בזמן הריצה (משתני סביבה או קבצים), עם זהות של השירות ולא עם מפתח קבוע; ב-CI דרך הסודות של ה-CI או OIDC"
+      - "החלפה קבועה של סודות, מינימום הרשאות, וסודות זמניים כשאפשר"
+    modelAnswer: |
+      סודות אסור שיהיו בקוד, ב-Git (גם לא בהיסטוריה), בתוך Docker image או מודפסים בלוגים של ה-CI. כל אלה מועתקים ומשותפים להרבה אנשים.
+      המקום שלהם הוא כספת סודות: HashiCorp Vault, AWS Secrets Manager או SSM Parameter Store. הכספת מצפינה אותם, קובעת מי מורשה לקרוא, ורושמת כל גישה.
+      בזמן הריצה האפליקציה מקבלת אותם בהזרקה. ב-Kubernetes למשל דרך External Secrets, שמסנכרן אותם ל-Secret או לקובץ. ההרשאה לקרוא מגיעה מהזהות של ה-Pod (IRSA), לא ממפתח שמור נוסף.
+      ה-CI משתמש בסודות המוצפנים שלו, או עדיף ב-OIDC, בלי שום סוד שמור.
+      ומחליפים סודות באופן קבוע. עדיף עוד יותר: סודות זמניים שנוצרים לכל שימוש (למשל ב-Vault).
+    explanation: "סורקים דליפות אוטומטית: gitleaks או trufflehog לפני commit וב-CI, ו-push protection של GitHub."
+
+  sec-secrets-002:
+    prompt: "מצאתם `DB_PASSWORD=hunter2` בשורת `ENV` ב-Dockerfile, וה-image כבר נדחף ל-registry. למה זו בעיה גם אם ה-repo פרטי?"
+    options:
+      - "כל מי שיכול למשוך את ה-image יכול לקרוא את הסיסמה עם docker inspect או docker history; images מועתקים ומשותפים"
+      - "משתני ENV מאטים את הקונטיינר"
+      - "Docker מצפין ערכי ENV, אז זה בסדר"
+      - "זו בעיה רק ב-Windows"
+    explanation: ההגדרות והשכבות של image גלויות לכל מי שמורשה למשוך אותו. מחליפים את הסיסמה מיד, ומעבירים אותה לאפליקציה בזמן הריצה במקום לאפות אותה ב-image.
+
+  sec-secrets-003:
+    prompt: איפה מפתח צריך לשמור את סיסמת מסד הנתונים לפיתוח מקומי?
+    options: ["בקובץ .env שמופיע ב-.gitignore", "כתובה בתוך הקוד", "ב-README", "בהודעה של commit"]
+    explanation: "קובץ `.env` שמוחרג מ-Git (או כספת סודות מקומית) לא נכנס ל-Git. מכניסים ל-Git קובץ `.env.example` עם ערכים ריקים, כדי שאחרים ידעו מה צריך."
+
+  sec-secrets-004:
+    prompt: למה להחליף סודות באופן קבוע, גם אם לא ידוע על שום דליפה?
+    options:
+      - "ייתכן שהייתה דליפה בלי שאף אחד שם לב; החלפה מגבילה כמה זמן סוד גנוב נשאר שימושי"
+      - "סודות ישנים מאטים את האפליקציה"
+      - "ספקי ענן מוחקים סודות שעברו 30 יום"
+      - "זה נחוץ רק למפתחות SSH"
+    explanation: "החלפה מקצרת את חלון הנזק. כשהיא אוטומטית (החלפה ב-Secrets Manager, סודות דינמיים ב-Vault) היא לא מכבידה."
+
+  sec-lp-001:
+    prompt: מה זה עקרון least privilege (מינימום הרשאות)? תנו שלוש דוגמאות מעולם ה-DevOps.
+    keyPoints:
+      - "כל זהות (אדם, שירות, pipeline) מקבלת רק את ההרשאות שהיא באמת צריכה, ורק לזמן שהיא צריכה"
+      - "דוגמה: IAM policy ממוקד (פעולות ומשאבים מסוימים) במקום הרשאה לכל דבר"
+      - "דוגמה: הרשאות Kubernetes ברמת namespace בלבד; קונטיינרים שלא רצים כ-root"
+      - "דוגמה: CI עם הרשאות זמניות דרך OIDC, מוגבלות ל-repo ול-branch אחד; בלי חשבונות מנהל משותפים"
+      - "המטרה: אם משהו נפרץ, הנזק מוגבל"
+    modelAnswer: |
+      מינימום הרשאות אומר: כל זהות, אדם, שירות או pipeline, מקבלת רק את ההרשאות שהיא באמת צריכה, רק איפה שהיא צריכה, ורצוי רק לזמן שהיא צריכה. כך, אם משהו נפרץ, הנזק מוגבל.
+      דוגמאות:
+      - לאפליקציה יש IAM role שמרשה `s3:GetObject` על bucket אחד, ולא `s3:*` על הכל.
+      - ב-Kubernetes, ל-service account יש Role ב-namespace שלו בלבד, ולא cluster-admin. הקונטיינרים רצים כמשתמש רגיל, בלי יכולות מיוחדות.
+      - ה-pipeline של הפריסה מקבל הרשאות זמניות דרך OIDC, ורק ה-main של repo אחד יכול להשתמש בהן. אין מפתח מנהל משותף.
+      ולאנשים: לא עובדים ביום-יום עם חשבון מנהל. מקבלים הרשאות מוגברות רק כשצריך, דרך SSO.
+    explanation: מתחילים מ"הכל אסור" ומוסיפים רק מה שצריך. ב-AWS, הכלי IAM Access Analyzer יכול לייצר policy לפי מה שהשירות באמת עשה.
+
+  sec-lp-002:
+    prompt: מה זה MFA, ולמה חייבים להפעיל אותו בחשבונות של קונסולת הענן?
+    options:
+      - "אימות רב-שלבי: הוכחה נוספת מלבד הסיסמה (קוד מאפליקציה, מפתח חומרה), כך שסיסמה גנובה לבד לא מספיקה"
+      - "דרך לשתף חשבון אחד בין הרבה אנשים"
+      - "יכולת של firewall"
+      - "שיטת גיבוי לסיסמאות"
+    explanation: "MFA היא ההגנה היעילה ביותר לחשבונות של אנשים. לחשבון ה-root של AWS חייב להיות MFA, רצוי עם מפתח חומרה."
+
+  sec-lp-003:
+    prompt: למה קונטיינרים לא צריכים לרוץ כ-root, ואיך נמנעים מזה?
+    keyPoints:
+      - "אם האפליקציה נפרצת, התוקף מקבל root בתוך הקונטיינר, וקל לו יותר לברוח לשרת או לגרום נזק"
+      - "ב-Dockerfile מוסיפים USER עם משתמש רגיל"
+      - "ב-Kubernetes: runAsNonRoot, allowPrivilegeEscalation false, הסרת capabilities, מערכת קבצים לקריאה בלבד"
+      - "האפליקציה מאזינה על פורט מעל 1024"
+    modelAnswer: |
+      כברירת מחדל, התהליך בקונטיינר רץ כ-root. אם תוקף פורץ לאפליקציה, הוא root בתוך הקונטיינר. יחד עם באג בקרנל או הגדרה גרועה, זה יכול להפוך לשליטה על השרת עצמו. משתמש רגיל מגביל את הנזק.
+      ב-Dockerfile יוצרים או משתמשים במשתמש רגיל, ועוברים אליו עם `USER`.
+      ב-Kubernetes מגדירים `runAsNonRoot: true` ו-`allowPrivilegeEscalation: false`, מסירים את כל ה-capabilities, ומגדירים מערכת קבצים לקריאה בלבד.
+      האפליקציה מאזינה על פורט מעל 1024, למשל 8080, כי משתמש רגיל לא יכול להאזין על פורטים נמוכים.
+    explanation: "ב-images רשמיים כמו `node` כבר יש משתמש בשם `node`. מספיק להוסיף `USER node`."
+
+  sec-sc-001:
+    prompt: מה זה אבטחת שרשרת האספקה (supply chain security)? תנו דרכים להגן על pipeline שבונה קונטיינרים.
+    keyPoints:
+      - "תקיפות דרך ספריות, base images, כלי בנייה או ה-CI (לא דרך הקוד שלכם): חבילות זדוניות, actions שנפרצו"
+      - "סריקה של ספריות ו-images לחולשות (Trivy, Grype) ועדכונים קבועים (Dependabot, Renovate)"
+      - "קיבוע גרסאות ו-digests (base images, GitHub Actions לפי SHA), ו-base images קטנים ומהימנים"
+      - "רשימת רכיבים (SBOM) וחתימה על images (cosign, SLSA), ובדיקת החתימה לפני פריסה"
+      - "הרשאות מינימליות ל-CI, branches מוגנים ו-code review"
+    modelAnswer: |
+      שרשרת האספקה היא כל מה שנכנס לתוכנה ולא אתם כתבתם: ספריות open-source, base images, כלי הבנייה ומערכת ה-CI עצמה. תקיפות כמו חבילת npm זדונית או GitHub Action שנפרץ מכוונות בדיוק לשם.
+      מה עושים:
+      - סורקים ספריות ו-images לחולשות ידועות ב-CI (Trivy, Grype), ומעדכנים אותן כל הזמן עם Dependabot או Renovate.
+      - מקבעים גרסאות. משתמשים ב-digest של ה-image, ומקבעים actions של צד שלישי ל-commit SHA.
+      - בוחרים base images קטנים ומהימנים.
+      - מייצרים SBOM, כדי לדעת מה יש בכל image.
+      - חותמים על images עם cosign, ובודקים את החתימה לפני פריסה (למשל עם Kyverno).
+      - נועלים את ה-CI עצמו: הרשאות מינימליות, branches מוגנים ו-code review חובה.
+    explanation: "ב-MyBroker ה-Trivy action מקובע לגרסה שלא יכולה להשתנות, אחרי שב-2026 trivy-action עצמו נפרץ. דוגמה מוחשית טובה לראיון."
+
+  sec-sc-002:
+    prompt: "Trivy מצא 40 חולשות ב-image שלכם. 3 מהן קריטיות, ויש להן תיקון. איזו מדיניות CI הגיונית?"
+    options:
+      - "להכשיל את הבנייה על חולשות HIGH/CRITICAL שיש להן תיקון, לעקוב אחרי השאר, ולבנות מחדש באופן קבוע כדי לקבל תיקונים של ה-base image"
+      - "להתעלם מסורקים, הם תמיד רועשים"
+      - "להכשיל על כל חולשה, בכל רמה"
+      - "לסרוק פעם בשנה"
+    explanation: "כשחוסמים רק חולשות חמורות שיש להן תיקון, ההתראות נשארות רלוונטיות. הרבה פעמים התיקון הוא פשוט לעדכן את ה-base image או ספרייה. סיכונים שהוחלט לקבל רושמים ב-`.trivyignore` שעובר review."
+
+  sec-sc-003:
+    prompt: מה עושה בוט עדכונים כמו Dependabot או Renovate?
+    options:
+      - "פותח pull requests לעדכון ספריות ישנות או פגיעות"
+      - "מוחק ספריות שלא בשימוש בפרודקשן"
+      - "מצפין את package.json"
+      - "בונה Docker images"
+    explanation: "הוא שומר את הספריות מעודכנות ב-PRs קטנים שקל לבדוק, וה-CI בודק כל עדכון לפני שממזגים."
+
+  sec-sc-004:
+    prompt: 'למה לקבע GitHub Action ל-commit SHA (למשל `uses: org/action@3f2c9a1…`) ולא לתגית כמו `@v4`?'
+    options:
+      - "תגית אפשר להזיז לקוד זדוני אם ה-action נפרץ; commit SHA לא יכול להשתנות"
+      - "SHA רץ מהר יותר"
+      - "תגיות לא עובדות ב-repos פרטיים"
+      - "GitHub מחייב את זה"
+    explanation: "זה קרה בתקיפות אמיתיות על actions פופולריים. מקבעים לפי SHA, ונותנים ל-Dependabot לעדכן את הקיבועים."
+
+  sec-tls-001:
+    prompt: איך מנהלים תעודות TLS ב-Kubernetes, ואיך נמנעים מתקלה של תעודה שפג תוקפה?
+    keyPoints:
+      - "cert-manager מנפיק ומחדש תעודות אוטומטית (Issuer, ClusterIssuer, Certificate, או annotation על Ingress)"
+      - "דרך Let's Encrypt (אימות HTTP-01 או DNS-01) או CA פנימי"
+      - "חידוש הרבה לפני שהתוקף פג, והתראות על תוקף שמתקרב (מטריקות של cert-manager, blackbox exporter)"
+      - "ההצפנה מסתיימת ב-ingress או ב-load balancer; המפתחות נשמרים כ-Secret"
+    modelAnswer: |
+      משתמשים ב-cert-manager.
+      מגדירים Issuer או ClusterIssuer. לאתרים ציבוריים זה Let's Encrypt (עם אימות HTTP-01 או DNS-01), ולמערכות פנימיות CA פנימי. אחר כך יוצרים משאב Certificate, או פשוט מוסיפים annotation ל-Ingress.
+      cert-manager מבקש את התעודה, שומר את התעודה והמפתח ב-Secret שה-ingress controller משתמש בו, ומחדש אותה אוטומטית, כברירת מחדל בערך 30 יום לפני שהתוקף פג.
+      תעודה שפג תוקפה היא עדיין תקלה קלאסית, ולכן מוסיפים התראה: למשל כשנשארו פחות מ-14 יום, או כשחידוש נכשל. מודדים עם המטריקות של cert-manager, או עם blackbox exporter שבודק את האתרים האמיתיים.
+    explanation: "ב-MyBroker משתמשים ב-cert-manager עם CA מקומי, וכל Ingress מקבל תעודה אוטומטית."
+
+  sec-tls-002:
+    prompt: '`curl https://api.internal` נכשל עם השגיאה "certificate verify failed: unable to get local issuer certificate". מה הסיבה הסבירה?'
+    options:
+      - "התעודה של השרת חתומה ע״י CA שהלקוח לא סומך עליו (CA פנימי שלא מותקן אצלו, או שחסרה תעודת ביניים בשרשרת)"
+      - "השרת למטה"
+      - "ה-DNS שגוי"
+      - "הפורט סגור"
+    explanation: "מתקנים את האמון: מתקינים את ה-CA הפנימי אצל הלקוח, או מגדירים את השרת לשלוח את כל השרשרת. לא 'מתקנים' עם `curl -k` בקוד אמיתי, זה מבטל את כל הבדיקה."
+
+  sec-tls-003:
+    prompt: מה Let's Encrypt נותן?
+    options: ["תעודות TLS חינמיות ואוטומטיות שהדפדפנים סומכים עליהן", "firewall חינמי", "מנהל סיסמאות", "שירות VPN"]
+    explanation: "הוא מנפיק תעודות קצרות-מועד (90 יום) דרך פרוטוקול ACME, ולכן החידוש חייב להיות אוטומטי, למשל עם cert-manager או certbot."
+
+  sec-tls-004:
+    prompt: התחברו עם openssl לשרת `example.com` בפורט 443, כדי לראות את התעודה שהוא מציג.
+    explanation: "`s_client` מציג את שרשרת התעודות ואת לחיצת היד. אם מעבירים את הפלט ל-`openssl x509 -noout -dates`, רואים מתי פג התוקף."
+
+  sec-hard-001:
+    prompt: "אילו הגדרות מקשיחות Pod ב-Kubernetes? (סמנו את כל הנכונות.)"
+    options:
+      - "runAsNonRoot: true, ומשתמש רגיל ב-image"
+      - "readOnlyRootFilesystem: true (עם emptyDir לתיקיות שצריך לכתוב אליהן)"
+      - "capabilities: drop: [ALL] ו-allowPrivilegeEscalation: false"
+      - "privileged: true, כדי שהאפליקציה תוכל לעשות כל מה שהיא צריכה"
+    explanation: "שלוש הראשונות הן חלק מרמת 'restricted' של Pod Security Standards. אפשר לאכוף אותן על כל namespace עם labels של Pod Security Admission. privileged נותן לקונטיינר כמעט שליטה מלאה בשרת."
+
+  sec-hard-002:
+    prompt: קיבלתם שרת Linux חדש שיהיה חשוף לאינטרנט. מה צעדי ההקשחה הבסיסיים?
+    keyPoints:
+      - "לעדכן את מערכת ההפעלה ולהפעיל עדכוני אבטחה אוטומטיים"
+      - "SSH: רק מפתחות, בלי root, הגבלה של כתובות מקור / bastion / VPN או SSM, ו-fail2ban"
+      - "firewall או security group שפותחים רק את הפורטים הנחוצים"
+      - "משתמשים עם הרשאות מינימליות ו-sudo; להסיר שירותים וחבילות מיותרים"
+      - "לוגים, ניטור וגיבויים"
+    modelAnswer: |
+      קודם מעדכנים את כל החבילות ומפעילים עדכוני אבטחה אוטומטיים.
+      SSH: רק מפתחות, `PermitRootLogin no`, ומשתמש עם שם ו-sudo. עדיף ש-SSH לא יהיה פתוח לכל האינטרנט: להגביל לכתובות של המשרד או ה-VPN, לעבור דרך bastion, או להשתמש ב-AWS SSM Session Manager בלי פורט 22 בכלל. אם חייבים שיהיה ציבורי, מוסיפים fail2ban.
+      firewall או security group שפותחים רק את מה שהשירות צריך, למשל 443.
+      מסירים או מכבים שירותים וחבילות שלא צריך.
+      ולבסוף: שולחים לוגים למערכת מרכזית, מגדירים ניטור והתראות, ומוודאים שיש גיבויים ושבדקו שחזור.
+    explanation: 'עדיף עוד יותר: שרתים שלא משנים בכלל (immutable). בונים image מוקשח עם Packer, ומחליפים שרת במקום לעדכן אותו.'
+
+  sec-hard-003:
+    prompt: מה העיקרון של "defense in depth" (הגנה בשכבות)?
+    options:
+      - "כמה שכבות הגנה נפרדות, כך שאם אחת נכשלת, לא הכל חשוף"
+      - "לשים את מסד הנתונים עמוק ככל האפשר ברשת"
+      - "firewall אחד חזק מאוד"
+      - "להצפין מידע פעמיים"
+    explanation: "למשל: security groups, ועוד NetworkPolicies, ועוד הזדהות באפליקציה, ועוד הרשאות IAM מינימליות, ועוד ניטור."
+
+  sec-hard-004:
+    prompt: מה הייתם בודקים בסקירת אבטחה של namespace ב-Kubernetes?
+    keyPoints:
+      - "אבטחת Pods: לא root, בלי קונטיינרים privileged, מערכת קבצים לקריאה בלבד, capabilities מוסרים (Pod Security Standards)"
+      - "רשת: NetworkPolicy של 'הכל חסום' ופתיחה רק של מה שצריך"
+      - "RBAC: בלי הרשאות רחבות או cluster-admin לשירותים; token של service account רק איפה שצריך"
+      - "טיפול בסודות, images ממקורות מהימנים ונסרקים, ומגבלות משאבים"
+    modelAnswer: |
+      בודקים בשכבות.
+      **Pods:** האם הם רצים כמשתמש רגיל, בלי קונטיינרים privileged, בלי capabilities ועם מערכת קבצים לקריאה בלבד? רמת "restricted" של Pod Security Standards יכולה לאכוף את זה על ה-namespace.
+      **רשת:** האם יש NetworkPolicy שחוסמת הכל כברירת מחדל ופותחת רק את התעבורה הנחוצה?
+      **RBAC:** האם ל-service accounts יש רק את ההרשאות שהם צריכים, בלי שום cluster-admin? והאם ה-token מחובר רק ל-Pods שבאמת משתמשים בו?
+      **סודות:** האם הם מגיעים מכספת סודות, ולא שמורים ב-Git?
+      **Images:** ממקורות מהימנים, עם גרסה קבועה, ונסרקים ב-CI.
+      **משאבים:** requests ו-limits, כדי ש-Pod אחד לא ירעיב את השאר.
+    explanation: "כלים כמו kube-bench, kubescape וסריקת Kubernetes של Trivy עושים חלק גדול מהבדיקה הזו אוטומטית."
+
+  sec-hard-005:
+    prompt: מה הדרך הבטוחה ביותר לתת למהנדסים גישה לשרתים ב-subnets פרטיים ב-AWS?
+    options:
+      - "AWS Systems Manager Session Manager: בלי פורט SSH פתוח, גישה לפי IAM, וכל סשן מתועד"
+      - "לתת לכל שרת כתובת ציבורית ולפתוח את פורט 22 לאינטרנט"
+      - "לשתף מפתח SSH אחד לכל הצוות"
+      - "לכבות את ה-security groups"
+    explanation: "השיטה הקלאסית היא שרת bastion עם מפתחות SSH. Session Manager מוריד גם את הפורט הפתוח וגם את ניהול המפתחות."
+
+  sec-secrets-005:
+    prompt: האם base64 הוא דרך בטוחה להסתיר סיסמה בקובץ הגדרות?
+    options:
+      - "לא: base64 הוא קידוד, לא הצפנה; כל אחד יכול לפענח אותו בפקודה אחת"
+      - "כן, זה סוג של הצפנה"
+      - "כן, אם המחרוזת ארוכה"
+      - "רק ב-Linux"
+    explanation: "`echo cGFzc3dvcmQ= | base64 -d` מדפיס `password`. Secrets ב-Kubernetes מקודדים ב-base64 רק לצורך העברה, ולכן הם עדיין צריכים RBAC והצפנה של האחסון."
+
+  sec-secrets-006:
+    prompt: מה נותן מנהל secrets כמו HashiCorp Vault או AWS Secrets Manager, לעומת secrets בקובצי הגדרות? (סמנו את כל הנכונות.)
+    options:
+      - "מקום אחד, מרכזי ומוצפן, ל-secrets"
+      - "בקרת גישה: רק אפליקציות ואנשים מסוימים יכולים לקרוא כל secret"
+      - "יומן של מי קרא מה, ותמיכה בהחלפה (rotation)"
+      - "עלייה מהירה יותר של האפליקציה"
+    explanation: "אפליקציות מביאות את ה-secrets בזמן ריצה בעזרת הזהות שלהן (IAM role, ServiceAccount ב-Kubernetes), כך ששום סוד לא נמצא ב-Git או ב-image."
+
+  sec-lp-004:
+    prompt: מה זה RBAC?
+    options:
+      - "Role-Based Access Control: נותנים הרשאות לתפקידים (roles), ומשתמשים או שירותים מקבלים תפקידים, במקום לתת הרשאות לכל אדם בנפרד"
+      - "סוג של firewall"
+      - "כלי גיבוי"
+      - "תקן הצפנה"
+    explanation: "דוגמה: תפקיד `developer` יכול לקרוא pods ולוגים ב-`staging`, ותפקיד `deployer` יכול לעדכן Deployments. כשמישהו עובר צוות, מחליפים לו תפקיד, ולא עשרות הרשאות."
+
+  sec-lp-005:
+    prompt: ה-pipeline של ה-CI פורס אפליקציה אחת ל-namespace בשם `shop`. אילו הרשאות צריכות להיות לו?
+    options:
+      - "רק מה שהפריסה צריכה ב-namespace בשם `shop`, רצוי עם הרשאות קצרות-מועד (OIDC)"
+      - "cluster-admin, כדי שלעולם לא ייכשל"
+      - "הרשאת קריאה לכל ה-namespaces"
+      - "אותן הרשאות שיש לצוות הפלטפורמה"
+    explanation: "מערכות CI הן יעד אהוב על תוקפים. אם ה-pipeline נפרץ, הרשאה צרה וקצרת-מועד מגבילה את מה שהתוקף יכול לעשות. עם GitOps, ה-CI לא צריך גישה ל-cluster בכלל."
+
+  sec-sc-005:
+    prompt: מה זה CVE?
+    options:
+      - "מזהה ציבורי של חולשת אבטחה ידועה, כמו CVE-2021-44228 (Log4Shell)"
+      - "סוג של container image"
+      - "אלגוריתם הצפנה"
+      - "תעודת אבטחה של ספק ענן"
+    explanation: "סורקים כמו Trivy משווים את החבילות שלכם למאגרי CVE. לכל CVE יש דרגת חומרה (ציון CVSS), והשאלה החשובה היא אם יש גרסה מתוקנת."
+
+  sec-sc-006:
+    prompt: סרקו את ה-image ‏`myapp:1.4.0` וחפשו חולשות ידועות עם Trivy.
+    explanation: "ב-CI מוסיפים `--severity HIGH,CRITICAL --ignore-unfixed --exit-code 1`, כך שהבנייה נכשלת רק על בעיות חמורות שיש להן תיקון. Trivy יודע לסרוק גם תיקיות, קובצי IaC וקובצי Kubernetes."
+
+  sec-sc-007:
+    prompt: מה ההבדל בין SAST ל-DAST?
+    options:
+      - "SAST מנתח את קוד המקור בלי להריץ אותו; DAST בודק את האפליקציה כשהיא רצה, מבחוץ, כמו תוקף"
+      - "SAST ל-Docker; DAST ל-Kubernetes"
+      - "הם אותו דבר"
+      - "DAST סורק תלויות; SAST סורק images"
+    explanation: "SAST (למשל Semgrep, CodeQL) רץ על כל pull request ומוצא דפוסים כמו SQL injection. DAST (למשל OWASP ZAP) רץ מול סביבת בדיקות פרוסה. סריקת תלויות (SCA) היא קטגוריה שלישית."
+
+  sec-sc-008:
+    prompt: מה זה SBOM?
+    options:
+      - "Software Bill of Materials: רשימה של כל הרכיבים והגרסאות שבתוך התוכנה או ה-image"
+      - "מסמך תקציב אבטחה"
+      - "סוג של חוק firewall"
+      - "פורמט גיבוי"
+    explanation: "כשמתפרסם CVE חדש, SBOM מאפשר לענות תוך דקות על השאלה \"באילו images שלנו יש את הספרייה הזאת?\". כלים כמו Syft או Trivy יוצרים אותו, ו-docker buildx יכול לצרף אותו ל-image."
+
+  sec-tls-005:
+    prompt: תעודת ה-TLS של אתר פגה לפני שעה. מה המשתמשים רואים?
+    options:
+      - "הדפדפנים מציגים אזהרת אבטחה, ולקוחות API מסרבים להתחבר; בפועל זו השבתה"
+      - "כלום; האתר עובד כרגיל"
+      - "האתר עובר אוטומטית ל-HTTP"
+      - "רק צבע המנעול משתנה"
+    explanation: "תעודה שפגה היא השבתה קלאסית שאפשר למנוע. מחדשים אוטומטית (cert-manager, ACM, Let's Encrypt), ומתריעים לפני שהיא פגה, למשל 14 יום מראש."
+
+  sec-hard-006:
+    prompt: למה חשוב לעדכן באופן קבוע (patching) את מערכת ההפעלה, החבילות וה-base images?
+    options:
+      - "רוב ההתקפות משתמשות בחולשות ידועות שכבר יש להן תיקון; העדכון סוגר אותן"
+      - "זה מאיץ את השרתים"
+      - "צריך את זה רק ב-Windows"
+      - "זה מוריד את חשבון הענן"
+    explanation: "בקונטיינרים, עדכון אומר לבנות מחדש את ה-image על base image מעודכן ולפרוס מחדש, ולא להריץ `apt upgrade` בתוך קונטיינר שרץ. כלים כמו Renovate עוזרים לשמור על base images עדכניים."
+
+  sec-hard-007:
+    prompt: מה עושה WAF (Web Application Firewall)?
+    options:
+      - "בודק בקשות HTTP וחוסם התקפות נפוצות כמו SQL injection ו-XSS, ויכול להגביל קצב של לקוחות פוגעניים"
+      - "מצפין את מסד הנתונים"
+      - "מחליף את ה-security groups"
+      - "סורק container images"
+    explanation: "הוא עובד בשכבה 7, בדרך כלל לפני load balancer או CDN (AWS WAF, Cloudflare). זו שכבה נוספת, לא תחליף לקוד מאובטח."

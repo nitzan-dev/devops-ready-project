@@ -1,0 +1,293 @@
+topic: terraform
+questions:
+  tf-iac-001:
+    prompt: מה זה Infrastructure as Code (IaC), ולמה זה עדיף על ללחוץ על כפתורים ב-console של הענן?
+    keyPoints:
+      - "התשתית מוגדרת בקבצי קוד או הגדרות, וכלי מפעיל אותם"
+      - "יש היסטוריית גרסאות ו-review (pull requests, היסטוריה, מי שינה מה)"
+      - "סביבות זהות שאפשר לשחזר (dev, staging ו-prod דומות), וקל לבנות מחדש אחרי אסון"
+      - "אפשר להריץ אוטומטית ב-CI/CD, פחות טעויות ידניות, וזיהוי של drift"
+    modelAnswer: |
+      Infrastructure as Code אומר שמתארים שרתים, רשתות, מסדי נתונים והרשאות בקבצים, וכלי כמו Terraform יוצר ומעדכן אותם.
+      לעומת לחיצות ב-console:
+      - **זה ב-Git**: שינויים עוברים review ב-pull requests, ויש היסטוריה ואחריות.
+      - **אפשר לחזור על זה**: staging ו-prod נבנים מאותו קוד, ואפשר לבנות סביבה מחדש אחרי אסון.
+      - **אוטומציה**: אפשר להריץ מ-CI/CD, בלי טעויות ידניות.
+      - **drift**: הכלי מגלה כשמישהו שינה משהו ידנית.
+      והקוד הוא גם תיעוד של מה שקיים.
+    explanation: "IaC הצהרתי (Terraform, CloudFormation) מתאר את המצב הסופי. כלים אימפרטיביים מתארים צעדים."
+
+  tf-iac-002:
+    prompt: מה ההבדל בין Terraform ל-Ansible? מתי משתמשים בכל אחד?
+    keyPoints:
+      - "Terraform: יצירת תשתית (משאבים בענן), הצהרתי, שומר state"
+      - "Ansible: ניהול הגדרות (התקנת חבילות, הגדרת מערכת ההפעלה והאפליקציות בשרתים), playbooks בסגנון של צעדים, בלי agent (דרך SSH), בלי קובץ state"
+      - "הם משלימים זה את זה: Terraform יוצר שרתים ורשת, Ansible מגדיר אותם"
+      - "עם קונטיינרים ו-images קבועים, ניהול הגדרות פחות חשוב (בונים images עם Packer או Dockerfile)"
+    modelAnswer: |
+      **Terraform** נועד ליצירת תשתית: הוא יוצר ומנהל משאבים כמו VPC, שרתים, מסדי נתונים, DNS ו-IAM, דרך ה-API של הספקים. הוא הצהרתי, ושומר בקובץ state את מה שיצר, כך שהוא יכול להראות מה ישתנה ולמחוק דברים.
+      **Ansible** נועד בעיקר לניהול הגדרות: הוא מתחבר לשרתים קיימים ב-SSH, בלי agent, ומריץ playbooks שמתקינים חבילות, כותבים קובצי הגדרות ומפעילים מחדש שירותים. אין לו קובץ state, והוא מסתמך על modules שאפשר להריץ שוב בלי נזק (idempotent).
+      הרבה פעמים משתמשים בשניהם: Terraform יוצר את השרתים, ו-Ansible מגדיר אותם.
+      בסביבות של קונטיינרים צריך פחות Ansible, כי בונים images במקום להגדיר שרתים חיים.
+    explanation: "Ansible יכול ליצור משאבים בענן, ו-Terraform יכול להריץ סקריפטים, אבל כל אחד הכי טוב בתפקיד שלו."
+
+  tf-iac-003:
+    prompt: מה המשמעות של **idempotent** בכלי IaC או בכלי לניהול הגדרות?
+    options:
+      - "הפעלה חוזרת של אותן הגדרות מגיעה לאותו מצב; הרצה שנייה לא משנה כלום אם שום דבר לא השתנה בינתיים"
+      - "הוא רץ רק פעם אחת"
+      - "הוא רץ במקביל"
+      - "אי אפשר לחזור ממנו לאחור"
+    explanation: '`terraform apply` פעמיים ברצף: בפעם השנייה כתוב "No changes". אותו דבר ב-playbook טוב של Ansible. סקריפט shell שמריץ `useradd` פעמיים ייכשל בפעם השנייה, אלא אם הוא בודק קודם.'
+
+  tf-iac-004:
+    prompt: Terraform הוא **הצהרתי** (declarative). מה זה אומר?
+    options:
+      - "מתארים את התוצאה הסופית שרוצים (3 שרתים, ה-VPC הזה), והכלי מחשב את הצעדים כדי להגיע אליה"
+      - "כותבים כל צעד לפי הסדר (צור את זה, אחר כך את זה)"
+      - "הוא רק קורא תשתית ולעולם לא משנה אותה"
+      - "הוא רץ רק כשמפעילים אותו מה-console"
+    explanation: "משנים `count = 3` ל-`count = 5`, ו-Terraform מוסיף 2: הוא מחשב את ההפרש לבד. בסקריפט אימפרטיבי הייתם צריכים לכתוב את הלוגיקה בעצמכם (\"כמה קיימים? צור את החסרים\")."
+
+  tf-basic-001:
+    prompt: סדרו את סדר העבודה הבסיסי עם Terraform.
+    steps:
+      - "terraform init (הורדת providers ו-modules, הגדרת ה-backend)"
+      - "terraform fmt / validate"
+      - "terraform plan (להראות מה ישתנה)"
+      - "terraform apply (לבצע את השינויים ולעדכן את ה-state)"
+      - "terraform destroy (כשמפרקים את הסביבה)"
+    explanation: ב-CI, `plan` רץ על ה-pull request ובודקים את הפלט שלו. `apply` רץ אחרי המיזוג, רצוי עם קובץ ה-plan השמור (`plan -out`).
+
+  tf-basic-002:
+    prompt: תסבירו מה זה providers, resources ו-data sources ב-Terraform.
+    keyPoints:
+      - "provider: plugin שמדבר עם API (aws, kubernetes, helm, github), ומוגדר עם פרטי התחברות ו-region"
+      - "resource: משהו ש-Terraform יוצר ומנהל (aws_instance, aws_s3_bucket); נשמר ב-state"
+      - "data source: קורא מידע קיים בלי לנהל אותו (ID של AMI, VPC קיים)"
+    modelAnswer: |
+      **provider** הוא plugin שיודע לדבר עם API אחד, כמו AWS, Kubernetes, Helm או GitHub. מגדירים לו דברים כמו region ופרטי התחברות, ו-`terraform init` מוריד אותו.
+      **resource** הוא אובייקט ש-Terraform יוצר ואחראי עליו, למשל `aws_s3_bucket` או `aws_instance`. הוא נרשם ב-state, ו-Terraform יעדכן או ימחק אותו כדי שיתאים לקוד.
+      **data source** רק קורא מידע על משהו שכבר קיים או שמנוהל במקום אחר, כמו ה-AMI העדכני של Ubuntu, VPC קיים, או מספר החשבון. כך אפשר להשתמש בו בלי לנהל אותו.
+    explanation: "ב-MyBroker השתמשתי ב-providers של kind, helm ו-kubernetes כדי ליצור את ה-cluster ולהתקין את ה-charts של הפלטפורמה."
+
+  tf-basic-003:
+    prompt: איך Terraform יודע באיזה סדר ליצור משאבים?
+    options:
+      - "הוא בונה גרף תלויות מההפניות בין משאבים (באופן מרומז) ומ-depends_on (במפורש), ויוצר במקביל משאבים שלא תלויים זה בזה"
+      - "מלמעלה למטה בקובץ"
+      - "לפי סדר האלף-בית של השמות"
+      - "צריך למספר כל משאב"
+    explanation: "אם subnet מפנה ל-`aws_vpc.main.id`, Terraform יודע שה-VPC קודם. סדר הקבצים לא משנה. `depends_on` נחוץ רק לתלויות נסתרות, שאף הפניה לא מבטאת."
+
+  tf-basic-004:
+    prompt: '`terraform plan` מראה `-/+ destroy and then create replacement` עבור מסד נתונים. מה זה אומר?'
+    options:
+      - "אי אפשר לעדכן את השדה שהשתנה במקום, ולכן Terraform **ימחק** את המשאב וייצור אותו מחדש; במסד נתונים זה עלול לאבד מידע, אז עוצרים ובודקים"
+      - "זה עדכון במקום, לא מזיק"
+      - "Terraform רק ייצור חדש וישאיר את הישן"
+      - "ה-plan נכשל"
+    explanation: "יש שדות ששינוי שלהם מחייב החלפה (מסומנים `# forces replacement` ב-plan). תמיד קוראים את ה-plan. משאבים קריטיים מגינים עם `lifecycle { prevent_destroy = true }` ועם הגנת מחיקה."
+
+  tf-basic-005:
+    prompt: הכינו תיקיית Terraform חדשה לשימוש (הורדת providers והגדרת ה-backend).
+    explanation: "מריצים פעם אחת בתיקייה חדשה, ושוב אחרי הוספת provider או module או שינוי ב-backend. זה יוצר את `.terraform/` ואת קובץ הנעילה `.terraform.lock.hcl` (את קובץ הנעילה עושים commit, את התיקייה לא)."
+
+  tf-basic-006:
+    prompt: הציגו מראש את השינויים ש-Terraform יבצע, ושמרו את ה-plan בקובץ בשם `tfplan`.
+    explanation: "שמירת ה-plan מבטיחה ש-`apply` יבצע בדיוק את מה שבדקתם, גם אם משהו השתנה בינתיים. זה הדפוס הרגיל ב-CI: plan על ה-pull request, ו-apply של ה-plan השמור אחרי אישור."
+
+  tf-basic-007:
+    prompt: בצעו את ה-plan השמור בקובץ `tfplan`.
+    explanation: "עם plan שמור, apply לא מבקש אישור, כי הבדיקה כבר נעשתה. `terraform apply` רגיל יוצר plan חדש ומבקש להקליד `yes`."
+
+  tf-basic-008:
+    prompt: סדרו את קובצי ה-`.tf` בתיקייה לפי העיצוב הסטנדרטי של Terraform.
+    explanation: "`fmt` מתקן הזחות ויישור. ב-CI, `terraform fmt -check` מכשיל את הבנייה אם הקבצים לא מעוצבים. `terraform validate` בודק תחביר והפניות."
+
+  tf-basic-009:
+    prompt: מה עושה `terraform plan`?
+    options:
+      - "משווה את הקוד ל-state ולתשתית האמיתית, ומראה מה ייווצר, ישתנה או יימחק, בלי לשנות כלום"
+      - "יוצר את המשאבים"
+      - "מוחק משאבים שלא נמצאים בקוד"
+      - "מוריד את ה-providers"
+    explanation: "בפלט: `+` = ייווצר, `~` = ישתנה במקום, `-` = יימחק, `-/+` = יימחק וייווצר מחדש. קוראים כל plan לפני apply, בעיקר את שורות ה-`-`."
+
+  tf-state-001:
+    prompt: מה זה קובץ ה-state של Terraform, למה הוא קיים, ואיך צוות צריך לשמור אותו?
+    keyPoints:
+      - "ה-state מקשר בין המשאבים בקוד לאובייקטים האמיתיים (IDs), ושומר את הפרטים שלהם"
+      - "צריך אותו כדי לחשב מה השתנה, לעקוב אחרי תלויות ולדעת מה לעדכן ומה למחוק; הוא גם משמש כ-cache"
+      - "צוות חייב backend מרוחק (S3, GCS, Terraform Cloud), כדי שלכולם יהיה state אחד"
+      - "עם נעילה (lockfile של S3 או DynamoDB), כדי שלא ירוצו שני apply במקביל"
+      - "ה-state יכול להכיל secrets בטקסט גלוי: מצפינים, מגבילים גישה, ולעולם לא עושים לו commit ל-Git"
+    modelAnswer: |
+      ה-state הוא הרישום של Terraform על מה שהוא מנהל. הוא מקשר כל משאב בקוד, כמו `aws_instance.web`, ל-ID האמיתי, `i-0abc…`, יחד עם הפרטים שלו.
+      בלעדיו Terraform לא היה יודע מה קיים, מה השתנה, או מה למחוק כשמוחקים קוד.
+      בצוות, קובץ `terraform.tfstate` מקומי לא עובד, כי לכל אחד תהיה תמונה משלו. משתמשים ב-**backend מרוחק**, כמו S3 bucket (עם גרסאות והצפנה), עם **נעילה**: ה-lockfile של S3 או טבלת DynamoDB. כך שני apply לא ירוצו בו זמנית ויהרסו את ה-state.
+      ה-state יכול להכיל גם secrets בטקסט גלוי, כמו סיסמאות של מסד נתונים. לכן מגבילים את הגישה אליו, ולא שמים אותו ב-Git.
+    explanation: "בפרויקט kind המקומי שלי ה-state הוא קובץ מקומי, כי זו הדגמה של משתמש אחד. בצוות אמיתי צריך backend של S3 עם נעילה."
+    followUps: ["מה קורה אם שני אנשים מריצים terraform apply באותו זמן בלי נעילה?"]
+
+  tf-state-002:
+    prompt: '`apply` קרס, ועכשיו כל פקודה אומרת שה-state נעול. מה הדרך הבטוחה להמשיך?'
+    options:
+      - "לוודא שאף apply אחר באמת לא רץ, ואז `terraform force-unlock <LOCK_ID>`"
+      - "למחוק את קובץ ה-state"
+      - "להריץ מעכשיו כל apply עם -lock=false"
+      - "ליצור מחדש את כל המשאבים"
+    explanation: "force-unlock מוריד רק את הנעילה, לא את ה-state. קודם מוודאים שאף אחד (ואף job של CI) לא באמצע apply. מחיקת ה-state אומרת ש-Terraform שוכח הכול, וינסה ליצור כפילויות."
+
+  tf-state-003:
+    prompt: מה זה drift, ואיך מגלים ומטפלים בו?
+    keyPoints:
+      - "drift: התשתית בפועל כבר לא תואמת לקוד או ל-state (שינויים ידניים ב-console, כלים אחרים)"
+      - "מגלים עם terraform plan (הרענון מראה הבדלים), רצוי בהרצה מתוזמנת ב-CI"
+      - "או שמחזירים את השינוי הידני עם apply, או שמעדכנים את הקוד אם השינוי היה מכוון"
+      - "מונעים עם הגבלת הרשאות כתיבה ב-console, וכל שינוי דרך pull request"
+    modelAnswer: |
+      drift הוא מצב שבו המציאות שונה מהקוד. בדרך כלל כי מישהו שינה משהו ידנית ב-console בזמן תקלה, או שכלי אחר נגע בזה.
+      `terraform plan` קורא מחדש את המצב מהמשאבים האמיתיים ומראה את ההבדל. הרבה צוותים מריצים plan מתוזמן ב-CI, ומתריעים כשהוא לא ריק.
+      ואז מחליטים:
+      - השינוי הידני היה טעות? `apply` מחזיר את המצב.
+      - זה היה תיקון לגיטימי? מעדכנים את הקוד כך שיתאים, כדי שה-apply הבא לא יבטל אותו.
+      לטווח ארוך, מגבילים הרשאות כתיבה ב-console, כדי ששינויים יעברו דרך pull requests.
+    explanation: "`terraform plan -refresh-only` מראה רק את ה-drift, בלי להציע שינויים כדי להתאים לקוד."
+
+  tf-state-004:
+    prompt: שיניתם בקוד את השם `aws_instance.web` ל-`aws_instance.app`. איך מונעים מ-Terraform למחוק את השרת וליצור אותו מחדש?
+    options:
+      - "מוסיפים בלוק `moved` (from = aws_instance.web, to = aws_instance.app), או מריצים `terraform state mv`"
+      - "לא צריך כלום; שינוי שם תמיד מזוהה"
+      - "מוחקים את קובץ ה-state"
+      - "משתמשים ב-`terraform import` על השם הישן"
+    explanation: "Terraform מזהה משאבים לפי הכתובת שלהם. כתובת חדשה נראית כמו משאב חדש. בלוק `moved {}` (שעובר review בקוד) או `terraform state mv` מעדכנים את הכתובת ב-state."
+
+  tf-state-005:
+    prompt: האם עושים commit ל-`terraform.tfstate` ב-Git?
+    options:
+      - "לא: הוא יכול להכיל secrets בטקסט גלוי, וחברי צוות ידרסו זה את ה-state של זה; משתמשים ב-backend מרוחק"
+      - "כן, תמיד, כדי שתהיה לו היסטוריה"
+      - "רק ב-branch הראשי"
+      - "כן, אבל רק ב-repos פרטיים"
+    explanation: "מוסיפים את `*.tfstate`, `*.tfstate.*` ו-`.terraform/` ל-`.gitignore`. backend מרוחק (למשל S3 עם גרסאות והצפנה) נותן היסטוריה, נעילה ועותק משותף אחד."
+
+  tf-state-006:
+    prompt: הציגו את הכתובות של כל המשאבים ש-Terraform עוקב אחריהם ב-state.
+    explanation: "מודפסות שורות כמו `aws_vpc.main` ו-`module.eks.aws_eks_cluster.this`. `terraform state show ADDRESS` מציג את הפרטים של משאב אחד. פקודות כמו `state rm` משנות את ה-state, אז זהירות."
+
+  tf-mod-001:
+    prompt: מה זה modules ב-Terraform, ולמה משתמשים בהם?
+    keyPoints:
+      - "module הוא קבוצה של משאבים לשימוש חוזר (תיקייה עם קובצי .tf), עם משתני קלט ו-outputs"
+      - "כל הגדרה היא root module שקורא ל-modules אחרים"
+      - "שימוש חוזר ואחידות: אותו דפוס של VPC או EKS לכל סביבה ולכל צוות, בלי העתקות"
+      - "יכולים להגיע מתיקייה מקומית, מ-Git או מה-Terraform Registry; נועלים גרסה"
+    modelAnswer: |
+      module הוא חבילה של קוד Terraform לשימוש חוזר: פשוט תיקייה של קובצי `.tf`, עם משתני קלט ו-outputs.
+      ההגדרה הראשית שלכם היא ה-root module, והיא קוראת ל-modules אחרים. למשל module בשם `vpc` שיוצר VPC, subnets, טבלאות ניתוב ו-NAT gateway מכמה קלטים בלבד, כמו ה-CIDR ומספר האזורים.
+      modules מאפשרים לבנות את אותו הדבר בדיוק ב-dev, ב-staging וב-prod, או בין צוותים, בלי להעתיק קוד, והם אורזים בתוכם את השיטות הנכונות.
+      הם יכולים להגיע מתיקייה מקומית, מ-repo ב-Git או מה-registry הציבורי, כמו `terraform-aws-modules/vpc`, ונועלים להם גרסה כמו לכל תלות.
+    explanation: "קלטים הם בלוקים של `variable`, פלטים הם בלוקים של `output`, ו-`locals` הם ערכים פנימיים מחושבים."
+
+  tf-mod-002:
+    prompt: איך צריך להעביר סיסמה של מסד נתונים ל-Terraform?
+    options:
+      - "לסמן את המשתנה `sensitive = true` ולתת לו ערך ממשתנה סביבה (TF_VAR_db_password) או ממנהל secrets; אף פעם לא לכתוב אותה בקוד או ב-tfvars שנכנס ל-Git"
+      - "לכתוב אותה ישירות ב-main.tf"
+      - "לעשות לה commit ב-terraform.tfvars"
+      - "לשים אותה בשם של המשאב"
+    explanation: "`sensitive` מסתיר אותה בפלט של plan, אבל היא **עדיין נכתבת ל-state**, ולכן מגינים על ה-state. עוד יותר טוב: לתת ל-AWS ליצור ולנהל אותה (`manage_master_user_password` ב-RDS), או לקרוא אותה מ-Secrets Manager."
+
+  tf-mod-003:
+    prompt: מה דרך נפוצה לנהל dev, staging ו-prod עם Terraform?
+    options:
+      - "הגדרה ראשית (או תיקייה) נפרדת לכל סביבה, שקוראת לאותם modules עם משתנים שונים, ולכל אחת state משלה"
+      - "קובץ state אחד לכל הסביבות"
+      - "להעתיק את כל הקוד לכל סביבה ולערוך ידנית"
+      - "להשתמש רק ב-prod"
+    explanation: "state נפרד לכל סביבה מגביל את הנזק כשמשהו משתבש. workspaces הם אפשרות נוספת לסביבות כמעט זהות. כלים כמו Terragrunt עוזרים להימנע מכפילויות."
+
+  tf-mod-004:
+    prompt: בשביל מה משתמשים ב-`output` ב-Terraform?
+    options:
+      - "כדי להציג ערכים אחרי apply (כמו שם ה-DNS של load balancer), וכדי להעביר ערכים מ-module לקוד שקורא לו"
+      - "כדי לכתוב לוגים לקובץ"
+      - "כדי להדפיס הודעות דיבוג בזמן plan"
+      - "כדי לייצא את ה-state ל-Git"
+    explanation: "דוגמה: module של `vpc` מוציא `private_subnet_ids`, ו-module של `eks` משתמש בהם. `terraform output` מדפיס את הערכים. אפשר לסמן outputs כ-`sensitive`."
+
+  tf-mod-005:
+    prompt: אילו דרכים נכונות לתת ערך למשתנה של Terraform, בלי לערוך את קוד ה-`.tf`? (סמנו את כל הנכונות.)
+    options:
+      - "קובץ `terraform.tfvars` (או `*.auto.tfvars`)"
+      - "`-var 'region=eu-west-1'` בשורת הפקודה"
+      - "משתנה סביבה `TF_VAR_region`"
+      - "לערוך את ה-plugin של ה-provider"
+    explanation: "אם לא ניתן ערך, משתמשים ב-`default` שבבלוק ה-`variable`. `-var` בשורת הפקודה גובר על קובצי tfvars, והם גוברים על משתני סביבה. לא שמים secrets בקובצי tfvars שנכנסים ל-Git."
+
+  tf-adv-001:
+    prompt: מה ההבדל בין `count` ל-`for_each`? למה `for_each` בדרך כלל בטוח יותר?
+    keyPoints:
+      - "count יוצר N עותקים, ממוספרים (resource[0], [1]…)"
+      - "for_each יוצר עותק לכל מפתח ב-map או איבר ב-set, ומזהה אותו לפי המפתח (resource[\"web\"])"
+      - "עם count, הסרת איבר מאמצע הרשימה מזיזה את המספרים, ו-Terraform מוחק ויוצר מחדש את המשאבים שאחריו"
+      - "המפתחות של for_each יציבים, ולכן הוספה או הסרה של איבר משפיעה רק עליו"
+    modelAnswer: |
+      `count = 3` יוצר עותקים ממוספרים: `aws_instance.web[0]`, `[1]`, `[2]`.
+      `for_each` מקבל map או set, ויוצר עותק לכל מפתח: `aws_s3_bucket.b["logs"]`, `["assets"]`.
+      ההבדל מופיע כשמשנים את הרשימה. עם count על `["a","b","c"]`, אם מורידים את "b", אז "c" זז ממספר 2 למספר 1, ו-Terraform מוחק ויוצר מחדש משאבים שבעצם לא השתנו.
+      עם for_each, כל עותק קשור למפתח שלו, אז הסרת "b" מוחקת רק את "b".
+      count מתאים ל"N דברים זהים", או למתג של הדלקה וכיבוי (`count = var.enabled ? 1 : 0`). for_each מתאים לאוסף של דברים שונים.
+    explanation: שאלה נפוצה מאוד בראיונות, הרבה פעמים בצורה של "מה היה קורה אם…".
+
+  tf-adv-002:
+    prompt: S3 bucket בשם `my-logs` נוצר ידנית. הכניסו אותו לניהול של Terraform בשם `aws_s3_bucket.logs` (בשורת הפקודה).
+    explanation: "`terraform import ADDRESS ID`, כלומר קודם הכתובת בקוד ואחר כך ה-ID האמיתי. כותבים קודם את בלוק ה-resource. מאז Terraform 1.5 אפשר גם בלוק `import {}` בקוד, שמופיע ב-`plan` ויכול לייצר את הקוד עם `-generate-config-out`."
+
+  tf-adv-003:
+    prompt: איזו הגדרת `lifecycle` גורמת ל-Terraform לסרב למחוק משאב (למשל מסד נתונים של production)?
+    options: ["prevent_destroy = true", "create_before_destroy = true", "ignore_changes = all", "replace_triggered_by"]
+    explanation: |
+      `create_before_destroy` יוצר קודם את המחליף (החלפה בלי השבתה).
+      `ignore_changes` מונע מ-Terraform "להילחם" על שדות שמשתנים במקום אחר (כמו desired_capacity של ASG שמנוהל על ידי autoscaling).
+      `replace_triggered_by` מכריח החלפה כשמשהו אחר משתנה.
+
+  tf-ans-001:
+    prompt: 'תסבירו את המושגים העיקריים של Ansible: inventory, playbook, task, module, role, ואיך הוא מתחבר לשרתים.'
+    keyPoints:
+      - "בלי agent: מתחבר ב-SSH (או WinRM ל-Windows) ומריץ modules של Python על השרת"
+      - "inventory: רשימה וקבוצות של שרתים (קובץ קבוע, או נוצר דינמית מהענן)"
+      - "playbook: YAML עם plays שמקשרים קבוצות שרתים ל-tasks; כל task קורא ל-module (apt, copy, template, service)"
+      - "roles: חבילות לשימוש חוזר של tasks, templates, handlers וברירות מחדל; handlers רצים כשמשהו השתנה (למשל הפעלה מחדש של nginx)"
+    modelAnswer: |
+      Ansible עובד **בלי agent**. הוא מתחבר לשרתים ב-SSH ומריץ שם modules קטנים של Python, כך שעל השרתים צריך רק Python.
+      - **inventory**: רשימת השרתים, בקבוצות כמו `[web]` ו-`[db]`. קובץ קבוע, או רשימה שנוצרת דינמית מ-AWS.
+      - **playbook**: קובץ YAML שאומר "על השרתים בקבוצה web, תריץ את ה-tasks האלה".
+      - **task**: קורא ל-**module**. `apt` מתקין חבילה, `template` יוצר קובץ הגדרות מתבנית Jinja2, `service` מוודא ש-nginx רץ. ה-modules משנים רק מה שצריך, אז אפשר להריץ שוב בלי נזק.
+      - **handlers**: רצים רק כשמשהו השתנה, בדרך כלל כדי להפעיל מחדש שירות אחרי שינוי בהגדרות שלו.
+      - **roles**: אורזים tasks, templates, handlers ומשתני ברירת מחדל ליחידה שאפשר להשתמש בה שוב, ולשתף דרך Ansible Galaxy.
+    explanation: "`ansible-playbook site.yml --check --diff` הוא הרצת ניסיון. משתנים רגישים שמים ב-Ansible Vault."
+
+  tf-ans-002:
+    prompt: למה עדיף להשתמש ב-modules כמו `apt`, `copy` ו-`service` של Ansible, ולא ב-task של `shell:` שמריץ את אותן פקודות?
+    options:
+      - "modules אפשר להריץ שוב בלי נזק, הם מדווחים 'changed' בצורה נכונה, תומכים בהרצת ניסיון ומטפלים במקרי קצה; פקודות shell רצות כל פעם"
+      - "אסור להשתמש ב-shell ב-playbooks"
+      - "modules מהירים יותר כי הם מדלגים על SSH"
+      - "אין סיבה"
+    explanation: "משתמשים ב-`shell` או `command` רק כשאין module מתאים, ואז מוסיפים `creates:` או `changed_when:` כדי שיהיה אפשר להריץ שוב בלי נזק."
+
+  tf-ans-003:
+    prompt: הריצו את ה-playbook `site.yml` מול קובץ ה-inventory `hosts.ini`, כהרצת ניסיון שמראה מה ישתנה.
+    explanation: "`--check` הוא הרצת ניסיון, ו-`--diff` מראה שינויים בקבצים. `--limit web1` מריץ רק על חלק מהשרתים, ו-`-K` מבקש את סיסמת ה-sudo."
+
+  tf-ans-004:
+    prompt: מה צריך שיהיה על שרת Linux לפני ש-Ansible יוכל לנהל אותו?
+    options:
+      - "גישת SSH ו-Python; לא צריך agent של Ansible"
+      - "agent של Ansible שמותקן ורץ כשירות"
+      - "cluster של Kubernetes"
+      - "Terraform מותקן על השרת"
+    explanation: "Ansible עובד בלי agent: הוא מתחבר מהמחשב שמנהל ב-SSH, ומריץ את ה-modules שלו עם ה-Python של השרת. זו סיבה גדולה לכך שקל להתחיל איתו."

@@ -32,7 +32,7 @@ UI = {
         "level": "Level",
     },
     "he": {
-        "title": "DevOps Ready", "home": "נושאים", "review": "טעויות", "switch": "English",
+        "title": "DevOps Ready", "home": "נושששששששששאים", "review": "טעויות", "switch": "English",
         "answered": "נענו", "correct_count": "נכונות", "start": "תרגול",
         "check": "בדיקה", "show_answer": "הצגת התשובה", "next": "לשאלה הבאה", "back": "חזרה לנושאים",
         "your_command": "הפקודה שלכם", "your_answer": "התשובה שלכם (לא חובה)",
